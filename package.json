@@ -1,0 +1,39 @@
+{
+  "name": "atb-eslint-plugin",
+  "version": "0.1.0",
+  "description": "ATB 访问级别与测试边界 ESLint 规则集：f_/i_/t_ 前缀越级访问、依赖作用域、测试纪律与受管路径",
+  "type": "module",
+  "license": "MIT",
+  "main": "./scripts/plugin.mjs",
+  "exports": {
+    ".": "./scripts/plugin.mjs",
+    "./plugin.mjs": "./scripts/plugin.mjs",
+    "./config.mjs": "./scripts/config.mjs",
+    "./rules/*.mjs": "./scripts/rules/*.mjs"
+  },
+  "files": [
+    "scripts/plugin.mjs",
+    "scripts/config.mjs",
+    "scripts/rules",
+    "scripts/lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "node --test scripts/tests/*.test.mjs",
+    "pretest": "npm run lint",
+    "lint": "eslint . --max-warnings 0",
+    "test:coverage": "node --test --experimental-test-coverage scripts/tests/*.test.mjs"
+  },
+  "dependencies": {
+    "litenvi-node": "file:../litenvi-node"
+  },
+  "devDependencies": {
+    "eslint": "9.39.4",
+    "eslint-plugin-package-json": "0.91.2",
+    "eslint-plugin-playwright": "2.12.2",
+    "globals": "17.14.0"
+  }
+}
