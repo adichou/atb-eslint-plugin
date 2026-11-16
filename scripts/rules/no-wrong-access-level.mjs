@@ -8,9 +8,16 @@
 // 无名字面，不参与 t_ 要求；CommonJS 导出面不在本规则（生态测试文件为 ESM；生产文件的 CJS
 // 导出面仍由 no-out-of-level-access 核验，测试 CJS 导出面两头均不检，如实留白）。
 // 本规则不设路径门：受检面由 ESLint files 配置决定（flat config 的 files 即管辖边界，配置
-// 基准路径之外的文件本就不会路由进来）。testDir 支持绝对路径或相对 ESLint 运行目录的相对
-// 路径（缺省 scripts/tests，与工厂 testDir 同名透传）；相对值以从仓库根运行 ESLint 为前提，
-// 无法保证运行目录时（monorepo 子包、IDE workingDirectories）传绝对路径。
+// 基准路径之外的文件本就不会路由进来）。testDir 仅支持相对仓库根的相对路径（缺省
+// scripts/tests，与工厂 testDir 同名透传）；前提约束：ESLint 运行目录必须在仓库根——不支持
+// 绝对路径，传入即抛（fail-loud，防运行目录漂移静默失效）。
+// 入口面核验（增强）：非测试文件的公开具名导出（无前缀）与 t_ 具名导出属于对外接口面——
+// 只应出现在对外导入面文件（manifest main/exports 目标，经包根自锚定判定；含 exports 通配）
+// 上；不在入口面的文件挂公开/t_ 导出即错位：公开/t_ 的受众在包外，而包外只能 import 入口面
+// 文件——挂在内部文件上外部够不着、内部又不该用，是假公开。内部文件的导出面用 i_（包内
+// 协作）；f_ 导出与 default 无名字面不参与本增强（前者归 no-out-of-level-access 的
+// filePrivateExport，后者无前缀体系名字面）。不落在任何包内（无 package.json 锚）的文件
+// 跳过本增强。
 // 检查面：模块顶层 FunctionDeclaration 与顶层函数值绑定（const/let/var = function/arrow）；
 // 非函数值的顶层变量绑定只查 i_/t_ 前缀（数据常量不要求 f_）；类/对象方法与嵌套函数不查
 // f_（按名字拿不走，f_ 的检查机制无从下手）。返回面相干：函数 return 的对象字面量整棵树
@@ -25,15 +32,24 @@
 // 与顶层数组返回不追（不执行函数、不做数据流，如实声明）；导出面对象键
 //（export default {…} / export const x = {…}）是接口面，归 no-out-of-level-access。无豁免：
 // 初始化序列、未被引用的顶层方法同样要求 f_（未被引用另有无用代码规则表态）。
+// 注释对账（原 no-wrong-access-comment 并入）：方法定义紧邻注释出现级别标注（「私有：/内部：
+// /测试专用：/外部：」，行首形态含块注释 * 前缀）时，标注须与名字前缀及导出情况相符——
+// f_ 只允许「私有」、i_ 只允许「内部」、t_ 只允许「测试专用」、无前缀导出方法允许「内部/
+// 外部」。缺失不报（级别由使用方自行声明，本规则只对账已声明者）；标注不构成对导出面的
+// 级别检查。检查面是方法定义（类方法/对象属性/函数声明），注释取紧邻连续块（无空行间隔），
+// 正文偶然出现的级别词不构成标注。
 import path from 'node:path';
+import { i_entryFacesOf, i_minimatch, i_projectRootOf } from '../lib/attributions.mjs';
 
 const LEVEL_PREFIXES = ['i_', 't_'];
 const DEFAULT_TEST_DIR = 'scripts/tests';
+// 注释对账：级别标注词与其允许关系。
+const COMMENT_TAGS = { filePrivate: '私有', internal: '内部', testOnly: '测试专用', public: '外部' };
 
 export default {
  meta: {
  type: 'problem',
- docs: { description: '非导出方法必须以 f_ 开头（文件私有）；非导出绑定不得使用 i_/t_ 级别前缀；测试文件导出面必须 t_；函数返回对象树中显式前缀键的级别须与函数同级或为 f_，无前缀键随句柄不核级，测试文件 i_ 契约键放行（返回面相干·读法 B）' },
+ docs: { description: '非导出方法必须以 f_ 开头（文件私有）；非导出绑定不得使用 i_/t_ 级别前缀；测试文件导出面必须 t_；非入口面文件不得挂公开/t_ 具名导出（入口面核验）；函数返回对象树中显式前缀键的级别须与函数同级或为 f_，无前缀键随句柄不核级，测试文件 i_ 契约键放行（返回面相干·读法 B）' },
  schema: [{
  type: 'object',
  properties: {
@@ -45,16 +61,23 @@ export default {
  notFilePrivate: "非导出方法 '{{name}}' 必须以 f_ 开头（文件私有）：不在导出面的方法一律 f_ 前缀",
  wrongLocalLevel: "非导出绑定 '{{name}}' 使用了级别前缀（{{prefix}}_）：非导出局部是文件私有的——函数须 f_，数据无须前缀（i_/t_ 只用于导出面）",
  testExportLevel: "测试文件导出 '{{name}}' 必须以 t_ 开头（测试专用级别）：测试协作接口一律 t_——无前缀导出即公开接口，生产引用即绕过 t_ 边界",
+ publicExportOffFace: "非入口面文件的{{kind}}导出 '{{name}}'：公开/t_ 导出属于对外接口面（manifest main/exports 声明的文件），内部文件的导出面用 i_（包内协作）或收敛为模块内部实现",
+ methodCommentConflict: "方法 '{{name}}' 注释标注「{{found}}」与访问级别「{{expected}}」矛盾（{{reason}}）",
  returnLevelExceed: "函数返回对象的成员 '{{name}}' 显式声明级别（{{memberLevel}}）与句柄受众（函数级别 {{fnLevel}}）不符：返回面经句柄流动，显式前缀键只能与函数同级或为 f_（无前缀键随句柄，不核级）",
  },
  },
 
  create(context) {
  const options = context.options[0] || {};
- // 测试身份：testDir（绝对路径或相对 ESLint 运行目录，缺省 scripts/tests）目录内即测试文件，
- // 导出面只放行 t_；受检面本身交由 ESLint files 配置，本规则不设路径门。
+ // 测试身份：testDir（相对仓库根的相对路径，缺省 scripts/tests）目录内即测试文件，导出面只
+ // 放行 t_；受检面本身交由 ESLint files 配置，本规则不设路径门。前提约束：ESLint 运行目录必须
+ // 在仓库根——testDir 不支持绝对路径，传入即抛。
  const cwd = context.cwd || context.getCwd();
- const testDir = path.resolve(cwd, options.testDir || DEFAULT_TEST_DIR);
+ const testDirInput = options.testDir || DEFAULT_TEST_DIR;
+ if (path.isAbsolute(testDirInput)) {
+ throw new Error(`testDir 必须是相对仓库根的相对路径（前提约束：ESLint 运行目录必须在仓库根），不接受绝对路径：${testDirInput}`);
+ }
+ const testDir = path.resolve(cwd, testDirInput);
  const filename = path.resolve(context.filename || context.getFilename());
  const isTestFile = !path.relative(testDir, filename).split(path.sep).join('/').startsWith('../');
 
@@ -77,6 +100,22 @@ export default {
  function checkTestExport(idNode, surfaceName) {
  if (!isTestFile || surfaceName.startsWith('t_')) return;
  context.report({ node: idNode, messageId: 'testExportLevel', data: { name: surfaceName } });
+ }
+
+ // 入口面核验（增强）：非测试文件的公开/t_ 具名导出只能挂在对外导入面文件（manifest
+ // main/exports 目标）上；i_ 导出（包内协作）与 f_ 导出（filePrivateExport 另议）不在此列。
+ // 无包锚（projectRootOf null）时跳过——谈 main/exports 面无从谈起。
+ const projectRoot = i_projectRootOf(filename);
+ const entryFaces = projectRoot === null ? null : i_entryFacesOf(projectRoot);
+ const relativeRoot = projectRoot === null ? null : path.relative(projectRoot, filename).split(path.sep).join('/');
+ const onImportFace = projectRoot !== null && !isTestFile
+ && (entryFaces.importFaces.has(filename)
+ || entryFaces.patterns.some((pattern) => i_minimatch(relativeRoot, pattern)));
+ function checkFaceExport(idNode, surfaceName) {
+ if (isTestFile || onImportFace) return;
+ if (surfaceName.startsWith('f_') || surfaceName.startsWith('i_')) return;
+ const kind = surfaceName.startsWith('t_') ? ' t_': ' 公开';
+ context.report({ node: idNode, messageId: 'publicExportOffFace', data: { name: surfaceName, kind } });
  }
 
  // 顶层变量声明统一入口：函数值走 f_ 检查，任意值走级别前缀检查（导出者跳过）。
@@ -182,7 +221,84 @@ export default {
  }
  };
 
+ // ---------- 注释对账（原 no-wrong-access-comment 并入）：定义紧邻注释的级别标注核验 ----------
+ const sourceCode = context.sourceCode || context.getSourceCode();
+ const f_definedName = (node) => {
+ if (node.type === 'MethodDefinition' || node.type === 'Property' || node.type === 'PropertyDefinition') {
+ if (node.computed) return null;
+ if (node.key.type === 'Identifier') return node.key.name;
+ if (node.key.type === 'Literal' && typeof node.key.value === 'string') return node.key.value;
+ return null;
+ }
+ return node.id ? node.id.name : null;
+ };
+ const f_isExportedDefinition = (node) => {
+ let current = node.parent;
+ while (current) {
+ if (current.type === 'ExportNamedDeclaration' || current.type === 'ExportDefaultDeclaration') return true;
+ if (current.type === 'Program' || current.type === 'CallExpression') return false;
+ current = current.parent;
+ }
+ return false;
+ };
+ // 标注与 (前缀分类, 导出情况) 的允许关系：不符即矛盾。
+ const f_allowedTags = (kind, exported) => {
+ if (kind === 'filePrivate') return new Set([COMMENT_TAGS.filePrivate]);
+ if (kind === 'internal') return new Set([COMMENT_TAGS.internal]);
+ if (kind === 'testOnly') return new Set([COMMENT_TAGS.testOnly]);
+ return exported ? new Set([COMMENT_TAGS.internal, COMMENT_TAGS.public]) : null;
+ };
+ // 定义紧邻的连续注释块（无空行间隔）内出现的级别标注集合。
+ const f_annotationTags = (anchorNode, fallbackNode) => {
+ const comments = sourceCode.getCommentsBefore(anchorNode);
+ if (!comments.length) return [];
+ const last = comments[comments.length - 1];
+ const definitionLine = (fallbackNode || anchorNode).loc.start.line;
+ if (definitionLine - last.loc.end.line > 1) return [];
+ const block = [last];
+ for (let i = comments.length - 2; i >= 0; i -= 1) {
+ if (last.loc.start.line - comments[i].loc.end.line > 1) break;
+ block.unshift(comments[i]);
+ }
+ const text = block.map((c) => (c.type === 'Block' ? c.value.replace(/\*/g, ' ') : c.value)).join('\n');
+ const found = new Set();
+ for (const tag of Object.values(COMMENT_TAGS)) {
+ const tagAtLineStart = new RegExp(`(?:^|\\n)\\s*\\*?\\s*${tag}\\s*[：:]`);
+ if (tagAtLineStart.test(text)) found.add(tag);
+ }
+ return [...found];
+ };
+ function checkDefinitionComment(node) {
+ if ((node.type === 'MethodDefinition' || node.type === 'Property' || node.type === 'PropertyDefinition')
+ && (!node.value || !['FunctionExpression', 'ArrowFunctionExpression'].includes(node.value.type))) return;
+ const name = f_definedName(node);
+ if (!name) return;
+ const kind = name.startsWith('f_') ? 'filePrivate' : name.startsWith('i_') ? 'internal' : name.startsWith('t_') ? 'testOnly' : 'public';
+ // 导出函数的注释锚点取 export 语句（注释紧邻 export 关键字之前）。
+ const anchor = node.type === 'FunctionDeclaration' && node.parent
+ && (node.parent.type === 'ExportNamedDeclaration' || node.parent.type === 'ExportDefaultDeclaration') ? node.parent : node;
+ const present = f_annotationTags(anchor, node);
+ if (present.length === 0) return; // 缺失不报：级别由使用方自行声明，本规则只对账已声明者
+ const exported = f_isExportedDefinition(node);
+ const allowed = f_allowedTags(kind, exported);
+ if (!allowed) return;
+ const conflicts = present.filter((tag) => !allowed.has(tag));
+ if (conflicts.length === 0) return;
+ const reason = exported && kind === 'public' ? '无前缀方法已对外导出，不得标注私有/测试专用'
+ : exported ? '导出方法级别由注释声明，须为 内部 或 外部'
+ : `与方法名前缀不符，${kind === 'filePrivate' ? 'f_ 方法只能标注 私有' : kind === 'internal' ? 'i_ 方法只能标注 内部' : 't_ 方法只能标注 测试专用'}`;
+ context.report({
+ node: node.type === 'FunctionDeclaration' ? node.id : node.key,
+ messageId: 'methodCommentConflict',
+ data: { name, found: conflicts.join('／'), expected: [...allowed].join('／'), reason },
+ });
+ }
+
  return {
+ MethodDefinition: checkDefinitionComment,
+ Property: checkDefinitionComment,
+ PropertyDefinition: checkDefinitionComment,
+ FunctionDeclaration: checkDefinitionComment,
  Program(programNode) {
  // 导出名单：export 列表（无 source）把既有顶层绑定挂入导出面。
  const exportedNames = new Set();
@@ -202,10 +318,14 @@ export default {
  if (decl.type === 'FunctionDeclaration' && decl.id) {
  checkBinding(decl.id, decl.id.name, true);
  checkTestExport(decl.id, decl.id.name);
+ checkFaceExport(decl.id, decl.id.name);
  } else if (decl.type === 'VariableDeclaration') {
  for (const declarator of decl.declarations) {
  checkDeclarator(declarator, true);
- if (declarator.id.type === 'Identifier') checkTestExport(declarator.id, declarator.id.name);
+ if (declarator.id.type === 'Identifier') {
+ checkTestExport(declarator.id, declarator.id.name);
+ checkFaceExport(declarator.id, declarator.id.name);
+ }
  }
  }
  continue;
@@ -213,7 +333,9 @@ export default {
  // export 名单与 re-export（含 source）：导出面以 exported 面名核验，测试文件非 t_ 即报。
  if (stmt.type === 'ExportNamedDeclaration') {
  for (const spec of stmt.specifiers) {
- checkTestExport(spec.exported, spec.exported.name ?? String(spec.exported.value ?? spec.local.name));
+ const surfaceName = spec.exported.name ?? String(spec.exported.value ?? spec.local.name);
+ checkTestExport(spec.exported, surfaceName);
+ checkFaceExport(spec.exported, surfaceName);
  }
  continue;
  }

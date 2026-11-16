@@ -2,9 +2,11 @@
 // 覆盖两块：导出面分工（测试文件导出面移交 no-wrong-access-level；生产禁 f_ 导出与 t_ 公开
 // 别名）与访问面矩阵（f_ 跨文件 / i_ 测试触达 / t_ 生产消费 / 模块对象·解构·别名转存·转调
 // 包装的归因传播 / 包名自引用 / 依赖包与 node: 不解释前缀 / 返回值不传播身份与不可知跳过的
-// 静态边界）。规则自锚定项目根（受检文件向上找最近 package.json），用例只需给绝对 filename
-// 与 testDir；相对导入目标不必真实存在（归因是纯路径解析，不做磁盘模块解析）。
+// 静态边界）。规则自锚定项目根（受检文件向上找最近 package.json），用例给绝对 filename 与
+// 相对 testDir（前提约束：ESLint 运行目录必须在仓库根，testDir 不支持绝对路径）；相对导入
+// 目标不必真实存在（归因是纯路径解析，不做磁盘模块解析）。
 import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuleTester } from 'eslint';
@@ -17,7 +19,8 @@ RuleTester.it = it;
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const prodFile = path.join(repoRoot, 'src/flow.mjs');
 const testFile = path.join(repoRoot, 'scripts/tests/suite.test.mjs');
-const options = [{ testDir: path.join(repoRoot, 'scripts/tests') }];
+// 前提约束：testDir 一律相对仓库根的相对路径（ESLint 运行目录必须在仓库根）。
+const options = [{ testDir: 'scripts/tests' }];
 
 const tester = new RuleTester({
   languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
@@ -413,4 +416,17 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
       }],
     },
   ],
+});
+
+// 前提约束（fail-loud）：testDir 不支持绝对路径——传入即抛，防运行目录漂移静默失效。
+it('no-out-of-level-access 绝对路径 testDir 抛错', () => {
+  assert.throws(
+    () => outOfLevelAccess.create({
+      options: [{ testDir: '/absolute/tests' }],
+      cwd: repoRoot,
+      filename: prodFile,
+    }),
+    /相对仓库根的相对路径/,
+    '绝对 testDir 应在 create 阶段抛错',
+  );
 });

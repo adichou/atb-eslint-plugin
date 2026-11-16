@@ -10,13 +10,13 @@
 // 直接使用面）；清理是否真实生效由运行时与评审验证。诊断按门面模块 + 用例名 + 所需开关定位。
 import path from 'node:path';
 import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
-import { minimatch } from '../lib/attributions.mjs';
+import { i_minimatch } from '../lib/attributions.mjs';
 
 // 门面 → 所需开关（t_mock 或 t_install）；未列出的 lite 模块视为无开关、豁免
 const DEFAULT_SWITCHES = {
  'lite-fs': 't_mock', 'lite-child_process': 't_mock', 'lite-process': 't_mock',
  'lite-http': 't_mock', 'lite-server': 't_mock', 'lite-timer': 't_mock',
- 'lite-browser-timer': 't_mock', 'lite-cmd-git': 't_install', 'lite-cmd-eslint': 't_install',
+ 'lite-browser-timer': 't_mock', 'lite-cmd-git': 't_install',
 };
 const LITE_PREFIX = 'litenvi-node/';
 
@@ -64,7 +64,7 @@ export default {
  const relativeFile = path.relative(scanPath, filename).split(path.sep).join('/');
  // scanPath 即受检范围（配置为测试目录）：目录外文件与 exceptionFiles 登记文件不受检。
  if (relativeFile.startsWith('../')
- || exceptions.some((pattern) => minimatch(relativeFile, pattern))) {
+ || exceptions.some((pattern) => i_minimatch(relativeFile, pattern))) {
  return {};
  }
  const sourceCode = context.sourceCode;

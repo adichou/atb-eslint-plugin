@@ -3,30 +3,38 @@
 // 布局模型：
 // - 管辖面 = root 下全部 js/mjs/cjs（统一三扩展名），除全局忽略层外一律有角色；
 // - 角色目录（相对 root 解析，互不重叠）：testDir（测试身份——t_ 授权 + 测试规则）、libDir
-//   （共享代码——生产侧分层底座，附加依赖单向检测）、depsDir（第三方依赖——全局忽略）；
+//   （共享代码——生产侧分层底座，附加依赖单向检测）、depsDir（第三方依赖——全局忽略）、
+//   buildToolDir（构建工具目录——devDependencies 开放面，缺省不启用）；
 // - 未落入角色的受管文件默认生产角色；根配置 eslint.config.mjs（内置常量）受越级访问/f_
-//   分级/吞错管辖，不受依赖三级链与循环检查约束（配置基建不进运行时，合法引用 devDependencies）；
+//   分级/吞错与依赖三级链管辖（规则内置识别为开发代码：devDependencies 合法，未声明依赖照抓），
+//   不受依赖循环检查约束；
 // - 全局忽略八层（内置于产出，不可配置）：depsDir、点号开头目录（隐藏目录及点号文件）、
 //   temp/tmp 目录、coverage/output 产物目录、*.min.js 压缩文件、image 资产目录、
 //   agent-team-board 看板数据目录（生态约定），之上叠加调用方 ignores；
 // - no-unmanaged-js 在本模型下恒真（管辖面即 root 全域，不存在白名单外文件），工厂不再接线；
 //   规则保留导出，供手动白名单式布局使用。
-// 内置基线 1/2/3 默认启用，其余规则块默认【停用】——按需逐个启用（去掉行首注释即接入）；块内管辖文件与选项内聚，
+// 内置基线 1/2/3、依赖三级链、死代码三件（死导出/文件私有死绑定/未使用依赖——后者随
+// packageJson.parser 接入）、访问级别分级与越级访问默认启用，其余规则块默认【停用】——按需逐个启用（去掉行首注释即接入）；块内管辖文件与选项内聚，
 // 规则 ID 全局唯一，块间无覆盖语义。本模块属包的公共导出面（经 'atb-eslint-plugin/config.mjs'
 // 导入）：只依赖本包 plugin 与 Node 内置模块，不携带任何项目专属依赖与参数缺省——JSON
 // parser（如 eslint-plugin-package-json，调用方自备依赖）与本地来源白名单等项目事实由
 // 调用方传入；不经工厂、手动注册插件按需组合同样受支持（见 README 接入示例）。
-// options 契约（随规则块启用逐步回归；当前仅以下三项）：
+// options 契约（随规则块启用逐步回归）：
 // - root（必需）：仓库根绝对路径——布局锚点，也是各规则 scanPath 的解析基准。
 // - testDir（缺省 'scripts/tests'）：测试代码目录——测试规则块的管辖面（t_ 授权随越级规则回归）。
 // - libDir（缺省 'scripts/lib'）：共享代码目录——lib 单向分层的管辖面。
 // - depsDir（缺省 'node_modules'）：依赖目录——全局忽略第一层。
+// - buildToolDir（缺省 ''）：构建工具目录——构建期/开发期辅助支撑代码的角色目录，devDependencies
+//   对它开放（依赖三级链块同名桥接）；未声明时不桥接。
 // - ignores（缺省 []）：在内置忽略之上追加的全局忽略。
 // - plugins（缺省 {}）：调用方额外插件注册——测试文件内联 eslint-disable 引用的插件、
 //   调用方自有规则块所需的插件在此登记；注册 playwright 即接线其三件套守卫（见下）。
-// 其余布局与纪律选项（testDir / libDir / packageJsonPath /
-// badTestExceptionFiles / badTestOptions / unmockedExceptionFiles / unmockedOptions /
-// entry / entryExceptionFiles / webPage / packageJson）随对应规则块启用逐项回归，
+// - packageJson（缺省 {}）：package.json 面规则接线——传 parser（调用方自备依赖，如
+//   eslint-plugin-package-json）即启用清单面三件（未使用运行时依赖、入口面指向核验、
+//   dist-tag 禁令）；本地来源（file:/link:）不检——开发分支联调形态，main 分支守护归交付流程。
+// - packageJsonPath（缺省 'package.json'）：package.json 面规则的文件目标（相对 root）。
+// 其余布局与纪律选项（badTestExceptionFiles / badTestOptions / unmockedExceptionFiles /
+// unmockedOptions / entryExceptionFiles / webPage）随对应规则块启用逐项回归，
 // 各注释块内标注了该块所需的选项。
 import path from 'node:path';
 import atbRules from './plugin.mjs';
@@ -39,8 +47,11 @@ export function createConfig({
   testDir = 'scripts/tests',
   libDir = 'scripts/lib',
   depsDir = 'node_modules',
+  buildToolDir = '',
   ignores = [],
   plugins = {},
+  packageJson = {},
+  packageJsonPath = 'package.json',
 } = {}) {
   if (!root || !path.isAbsolute(root)) {
     throw new Error('createConfig 需要 root 为仓库根绝对路径：布局目录与各规则 scanPath 均相对它解析');
@@ -63,16 +74,8 @@ export function createConfig({
 
   // ======== 内置基线 1/2/3 默认启用；其余规则块默认【停用】：按需逐个启用（去掉行首注释即接入） ========
 
-  // ---------- 注释对账：权限标注与导出面/前缀核验（缺失不报）——受管全域 ----------
-  // {
-  //   files: jsGlobs,
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'atb/no-wrong-access-comment': ['error', { scanPath: root }],
-  //   },
-  // },
-
-  // ---------- 内置基线 1：通配符导入禁令（按实际使用的公共导出写具名导入）——受管全域 ----------
+  
+  // ---------- 通配符导入禁令（按实际使用的公共导出写具名导入）——受管全域 ----------
   {
     files: jsGlobs,
     languageOptions: { ...jsLanguage },
@@ -83,8 +86,8 @@ export function createConfig({
       }],
     },
   },
-
-  // ---------- 内置基线 2：finally 安全——受管全域 ----------
+  
+  // ---- 禁止不安全的 finally 语句，例如 finally中直接 return 吞返回值 ----------
   {
     files: jsGlobs,
     languageOptions: { ...jsLanguage },
@@ -93,7 +96,7 @@ export function createConfig({
     },
   },
   
-  // ---------- 内置基线 3：禁止静默捕获异常不处理 ----------
+  // ---------- 禁止静默捕获异常不处理 ----------
   {
     files: jsGlobs,
     languageOptions: { ...jsLanguage },
@@ -101,17 +104,43 @@ export function createConfig({
       'atb/no-silent-catch': 'error',
     },
   },
-  // ---------- 未声明依赖三级判定链（生产 + lib + 测试；根配置合法引用 devDependencies 豁免） ----------
-  // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）；devPaths 相对所属包根解析。
-  // {
-  //   files: jsGlobs,
-  //   ignores: ['eslint.config.mjs'],
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'atb/no-undeclared-dependencies-imports': ['error', { devPaths }],
-  //   },
-  // },
-  // ----- 访问级别分级：非导出方法必须 f_，测试文件导出面必须 t_（testDir 相对仓库根，原样透传） --------
+  // ---------- 禁止未在 package.json 中声明的依赖导入 ----------
+  // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）。testDir 同名桥接
+  //（测试代码 = devDependencies 合法受众），buildToolDir 同名透传（构建工具目录，未声明不
+  // 桥接）；根配置 eslint.config.mjs 由规则内置识别为开发代码（不经参数，未声明依赖照抓）；
+  // 本块不设 ignores，不支持忽略。
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-undeclared-dependencies-imports': ['error', { testDir, buildToolDir }],
+    },
+  },
+  // ---------- 禁止无用代码：无用导出，无用私有代码和无用导入
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-unused-exports': ['error', { testDir }],
+      'atb/no-unused-file-private-codes': 'error',
+      'atb/no-unused-imports': 'error',
+    },
+  },
+  // ---------- 禁止 package.json 中的无用依赖、错误导出与宽松版本标签----
+  // 公共工厂不携带项目专属依赖；三规则自锚定 package.json 所在目录——依赖扫描收集裸导入包名；
+  // 入口面核验禁止 bin/main/exports 指向 testDir 测试文件与 buildToolDir 构建工具文件；
+  // 版本政策禁全部 dist-tag 浮动标签（本地 file:/link: 来源不检——开发分支联调形态，
+  // main 分支守护归交付流程，见看板 REQ-20261116-003）。
+  ...(packageJson?.parser ? [{
+    files: [packageJsonPath],
+    languageOptions: { parser: packageJson.parser },
+    rules: {
+      'atb/no-unused-runtime-dependencies-in-package': 'error',
+      'atb/no-wrong-exports-in-package': ['error', { testDir, buildToolDir }],
+      'atb/no-loose-dependency-specs': 'error',
+    },
+  }] : []),
+  // ----- 禁止错误的访问级别和注释：非导出方法必须 f_，测试文件导出面必须 t_  --------
   {
     files: jsGlobs,
     languageOptions: { ...jsLanguage },
@@ -120,7 +149,7 @@ export function createConfig({
     },
   },
   
-  // ---------- 越级访问：f_/i_/t_ 前缀越级（生产 + lib + 测试 + 根配置）——受管全域 ----------
+  // ----禁止越级访问------
   // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）；testDir 与分级块
   // 同名透传。
   {
@@ -131,18 +160,47 @@ export function createConfig({
     },
   },
 
+  // -----禁止共享库反向导入业务代码 ----------
+  {
+    files: f_jsFilesUnder(libDir),
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [{
+        group: ['..', '../*', '../**'],
+        message: `lib 层单向依赖：${libDir} 只能引用 lib 内模块（./）、内置模块与依赖清单中的包，不得上溯入口或旁路 lib 外的其他源代码；需要 lib 外能力时下沉到 lib 或经参数注入`,
+      }] }],
+      /*
+      flat config 同名规则后者覆盖前者——lib 块声明了 no-restricted-syntax（ImportExpression）就会在 lib 文件上整体覆盖前面的通配符禁令，lib 文件立即失守（复现：lib 下通配符导入零报告），因此需要在这里重复声明通配符禁令，才能在 lib 文件上同时生效两条规则。
+      */
+      'no-restricted-syntax': ['error', {
+        selector: 'ImportNamespaceSpecifier',
+        message: "禁止 'import * as' 通配符导入：按实际使用的公共导出写具名导入",
+      }, {
+        selector: 'ImportExpression',
+        message: 'lib 层单向依赖：禁用动态 import（静态检查盲区），需要懒加载能力时先在配置层明确放开',
+      }],
+    },
+  },
 
-
-  // ---------- 依赖循环：受管模块间本地依赖图回溯（生产 + lib + 测试；根配置豁免） ----------
-  // {
-  //   files: jsGlobs,
-  //   ignores: ['eslint.config.mjs'],
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'atb/no-dependency-cycles': ['error', { scanPath: root }],
-  //   },
-  // },
-
+  // ----禁止循环导入（项目根自锚定建图，无路径参数与豁免：根配置同样受检） ----
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-import-cycles': 'error',
+    },
+  },
+  
+  // ---- 测试入口驱动白名单（测试以 node 驱动生产脚本须命中 entry 清单） ----------
+  // testDir 同名桥接受检面；entry/webPage/entryExceptionFiles 由调用方按需传入
+  //（入口事实源演进为 package.json 声明——方案讨论中，接入前 entry 须显式声明）。
+  {
+    files: f_jsFilesUnder(testDir),
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-undeclared-entry-in-test': ['error', { testDir }],
+    },
+  },
   // ---------- playwright 守卫三件套：调用方注册 playwright 插件时接线（异步等待/固定睡眠/force 选项） ----------
   // ...(plugins.playwright ? [{
   //   files: f_jsFilesUnder(testDir),
@@ -154,26 +212,6 @@ export function createConfig({
   //   },
   // }] : []),
 
-  // ---------- lib 单向分层：共享代码不得反向依赖 lib 外源代码（dependencies 包说明符与内置模块除外） ----------
-  // 双规则承载：no-restricted-imports 禁相对上溯/旁路（静态导入与 export-from）；
-  // no-restricted-syntax 禁动态 import（静态检查盲区，防绕行）。
-  // {
-  //   files: f_jsFilesUnder(libDir),
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'no-restricted-imports': ['error', { patterns: [{
-  //       group: ['..', '../*', '../**'],
-  //       message: `lib 层单向依赖：${libDir} 只能引用 lib 内模块（./）、内置模块与依赖清单中的包，不得上溯入口或旁路 lib 外的其他源代码；需要 lib 外能力时下沉到 lib 或经参数注入`,
-  //     }] }],
-  //     'no-restricted-syntax': ['error', {
-  //       selector: 'ImportNamespaceSpecifier',
-  //       message: "禁止 'import * as' 通配符导入：按实际使用的公共导出写具名导入",
-  //     }, {
-  //       selector: 'ImportExpression',
-  //       message: 'lib 层单向依赖：禁用动态 import（静态检查盲区），需要懒加载能力时先在配置层明确放开',
-  //     }],
-  //   },
-  // },
 
 
   // ---------- 测试坏写法三合一（质量模式 + SC 注释归属 + 页面交互真实性） ----------
@@ -194,28 +232,7 @@ export function createConfig({
   //   },
   // },
 
-  // ---------- 测试入口驱动白名单（测试以 node 驱动生产脚本须命中 entry 清单） ----------
-  // {
-  //   files: f_jsFilesUnder(testDir),
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'atb/no-undeclared-entry-in-test': ['error', {
-  //       scanPath: testRoot,
-  //       entry,
-  //       ...(webPage ? { webPage } : {}), // webPage 声明为 object，null 会过不了规则 schema
-  //       exceptionFiles: entryExceptionFiles,
-  //     }],
-  //   },
-  // },
 
-  // ---------- package.json 依赖来源政策（禁 dist-tag + 本地来源白名单，parser 调用方自备） ----------
-  // ...(packageJson?.parser ? [{
-  //   files: [packageJsonPath],
-  //   languageOptions: { parser: packageJson.parser },
-  //   rules: {
-  //     'atb/no-loose-dependency-specs': ['error', { localWhitelist: packageJson.localWhitelist || [] }],
-  //   },
-  // }] : []),
   ];
 }
 

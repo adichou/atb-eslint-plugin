@@ -6,8 +6,9 @@
 // 内外部判定与显示路径均以它为基准；不落在任何包内的文件不受检。
 // 相对路径、绝对路径和包名自引用按实际项目路径归属，软链越出根目录与 node_modules 不受管。
 // f_ 禁止跨文件访问；i_ 允许本项目生产协作、禁止测试触达；t_ 只允许测试路径使用（前缀固定，不提供自定义）。
-// 测试身份单一目录：testDir 即测试代码唯一居所（缺省 scripts/tests，与 no-wrong-access-level
-// 同名同语义），不设多目录与 fixture 名单——所有测试代码集中在 testDir 下管理。
+// 测试身份单一目录：testDir 即测试代码唯一居所（相对仓库根的相对路径，缺省 scripts/tests，
+// 与 no-wrong-access-level 同名同语义；前提约束：ESLint 运行目录必须在仓库根，绝对路径传入
+// 即抛），不设多目录与 fixture 名单——所有测试代码集中在 testDir 下管理。
 // 导出面分工：测试文件（testDir 命中）导出面由 atb/no-wrong-access-level 统一要求 t_
 //（f_/i_/无前缀均落入其 testExportLevel 口径），本规则跳过测试文件导出面避免同面双报，
 // 只核验生产文件的导出面。
@@ -18,7 +19,7 @@
 // 不执行提供者源码，不推断任意运行时数据类型或跨函数返回值。
 import path from 'node:path';
 import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
-import { evaluateStaticString, packageNameOf, projectRootOf, repoRelative } from '../lib/attributions.mjs';
+import { i_evaluateStaticString, i_packageNameOf, i_projectRootOf, i_repoRelative } from '../lib/attributions.mjs';
 
 const DEFAULT_TEST_DIR = 'scripts/tests';
 // 私有：清单缺失或无效时不推断包名自引用，其他本地路径仍可独立判定。
@@ -72,13 +73,18 @@ export default {
  // 项目根自锚定：受检文件向上找最近 package.json；不落在任何包内的文件不受检（库实现文件
  // 可定义导出 t_ 的场景由此天然成立——库文件按其自身包根自查）。
  const filename = path.resolve(context.filename || context.getFilename());
- const projectRoot = projectRootOf(filename);
+ const projectRoot = i_projectRootOf(filename);
  if (projectRoot === null) return {};
  const relative = path.relative(projectRoot, filename).split(path.sep).join('/');
- // 测试目录（与 no-wrong-access-level 同名同语义：绝对路径或相对 ESLint 运行目录，缺省
- // scripts/tests）：测试代码唯一居所，目录内即测试身份，t_ 接口对该文件放行。
+ // 测试目录（与 no-wrong-access-level 同名同语义：相对仓库根的相对路径，缺省 scripts/tests）：
+ // 测试代码唯一居所，目录内即测试身份，t_ 接口对该文件放行。前提约束：ESLint 运行目录必须在
+ // 仓库根——testDir 不支持绝对路径，传入即抛。
  const cwd = context.cwd || context.getCwd();
- const testDir = path.resolve(cwd, options.testDir || DEFAULT_TEST_DIR);
+ const testDirInput = options.testDir || DEFAULT_TEST_DIR;
+ if (path.isAbsolute(testDirInput)) {
+ throw new Error(`testDir 必须是相对仓库根的相对路径（前提约束：ESLint 运行目录必须在仓库根），不接受绝对路径：${testDirInput}`);
+ }
+ const testDir = path.resolve(cwd, testDirInput);
  const isTestFile = !path.relative(testDir, filename).split(path.sep).join('/').startsWith('../');
  const sourceCode = context.sourceCode || context.getSourceCode();
  const manifest = f_manifest(projectRoot);
@@ -88,7 +94,7 @@ export default {
  let target;
  if (specifier.startsWith('.') || path.isAbsolute(specifier)) {
  target = path.resolve(path.dirname(filename), specifier);
- } else if (manifest.name && packageNameOf(specifier) === manifest.name) {
+ } else if (manifest.name && i_packageNameOf(specifier) === manifest.name) {
  const subpath = specifier.slice(manifest.name.length).replace(/^\//, '');
  const key = subpath ? `./${subpath}` : '.';
  const exports = manifest.exports;
@@ -108,7 +114,7 @@ export default {
  }
  target = path.resolve(projectRoot, exported || subpath || manifest.main || 'index.js');
  } else return { f_specifier: specifier, f_external: true };
- const relativeTarget = repoRelative(target, projectRoot);
+ const relativeTarget = i_repoRelative(target, projectRoot);
  const external = relativeTarget === null || relativeTarget.split('/').includes('node_modules');
  return { f_specifier: specifier, f_external: external, f_module: relativeTarget, f_member: '' };
  }
@@ -161,7 +167,7 @@ export default {
  case 'MemberExpression': {
  const base = resolveBaseExpression(expr.object);
  if (!base) return null;
- const key = expr.computed ? evaluateStaticString(expr.property, sourceCode)
+ const key = expr.computed ? i_evaluateStaticString(expr.property, sourceCode)
  : { resolved: true, value: expr.property.name };
  return { ...base, f_member: base.f_member !== null && key.resolved
  ? [base.f_member, key.value].filter(Boolean).join('.') : null };
@@ -198,7 +204,7 @@ export default {
 
  // 加载目标解析：字面量/无插值模板/可解析常量 → 说明符归因；无法解析返回 null 并停止归因。
  function resolveLoadTarget(arg) {
- const evaluated = evaluateStaticString(arg, sourceCode);
+ const evaluated = i_evaluateStaticString(arg, sourceCode);
  if (!evaluated.resolved) return null;
  return sourceOf(evaluated.value);
  }
@@ -250,7 +256,7 @@ export default {
  if (node.computed && node.property.type === 'Literal' && typeof node.property.value === 'number') return;
  const keyName = node.computed
  ? (() => {
- const evaluated = evaluateStaticString(node.property, sourceCode);
+ const evaluated = i_evaluateStaticString(node.property, sourceCode);
  return evaluated.resolved ? evaluated.value: null;
  })()
  : (node.property.type === 'Identifier' ? node.property.name: null);
@@ -315,7 +321,7 @@ export default {
  function exportsFaceKey(left) {
  if (left.type !== 'MemberExpression') return null;
  const key = left.computed
- ? (evaluateStaticString(left.property, sourceCode).resolved ? String(evaluateStaticString(left.property, sourceCode).value): null)
+ ? (i_evaluateStaticString(left.property, sourceCode).resolved ? String(i_evaluateStaticString(left.property, sourceCode).value): null)
  : (left.property.type === 'Identifier' ? left.property.name: null);
  if (!key) return null;
  const obj = left.object;
@@ -424,7 +430,9 @@ export default {
  if (prop.type !== 'Property') continue;
  const keyName = prop.computed ? null: (prop.key.type === 'Identifier' ? prop.key.name: String(prop.key.value));
  if (keyName) checkExportedName(prop.key, keyName, null);
- if (prop.value.type === 'Identifier') {
+ // 聚合形态（REQ-20261031-001）：键是面名、值是实现引用——实现绑定跟随面级别，
+ // 不按自身前缀核验；仅 shorthand（键=值同名，面名即值名）参与核验。
+ if (prop.shorthand === true) {
  const scope = sourceCode.getScope(prop.value);
  const binding = scope.set.get(prop.value.name);
  const derived = binding && (derivedBindings.get(binding) || moduleBindings.get(binding)?.source);
@@ -475,7 +483,7 @@ export default {
  // require('x').prop 形态与 loader 别名 .call 形态经 resolveBaseExpression 命中
  const base = resolveBaseExpression(callee.object);
  if (base) {
- const evaluated = callee.computed ? evaluateStaticString(callee.property, sourceCode): { resolved: true, value: callee.property.name };
+ const evaluated = callee.computed ? i_evaluateStaticString(callee.property, sourceCode): { resolved: true, value: callee.property.name };
  if (evaluated.resolved) reportAccess(callee.property, evaluated.value, base);
  return;
  }
@@ -506,14 +514,15 @@ export default {
  checkExportedName(left.property, faceKey, null);
  return;
  }
- // module.exports = {...|fn}：对象键与函数名均按导出面核验
+ // module.exports = {...|fn}：对象键与函数名均按导出面核验；聚合值实现引用不核（同
+ // ExportDefaultDeclaration 口径——键是面名，值跟随面级别；仅 shorthand 参与）。
  if (node.right.type === 'ObjectExpression') {
  for (const prop of node.right.properties) {
  if (prop.type !== 'Property') continue;
- const evaluatedPropKey = prop.computed ? evaluateStaticString(prop.key, sourceCode): { resolved: true, value: prop.key.name };
+ const evaluatedPropKey = prop.computed ? i_evaluateStaticString(prop.key, sourceCode): { resolved: true, value: prop.key.name };
  const propKey = evaluatedPropKey.resolved ? String(evaluatedPropKey.value): null;
  if (propKey) checkExportedName(prop.key, propKey, null);
- if (prop.value.type === 'Identifier') {
+ if (prop.shorthand === true && prop.value.type === 'Identifier') {
  const valueBinding = scope.set.get(prop.value.name);
  const derived = valueBinding && (derivedBindings.get(valueBinding) || moduleBindings.get(valueBinding)?.source);
  checkExportedName(prop.value, prop.value.name, derived || null);

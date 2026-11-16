@@ -5,7 +5,7 @@
 // 经 managedPaths 登记豁免；scanPath 之外（相邻包、系统路径）不归本仓判定。managedPaths
 // 缺省为空：未配置即全部报错（fail-loud），配置方必须显式声明受管路径。
 import path from 'node:path';
-import { minimatch } from '../lib/attributions.mjs';
+import { i_minimatch } from '../lib/attributions.mjs';
 
 export default {
  meta: {
@@ -32,7 +32,7 @@ export default {
  const relative = path.relative(scanPath, filename).split(path.sep).join('/');
  // 仓库根之外的文件（相邻包、系统路径）不属于本仓受管范围，不在此判定。
  if (relative.startsWith('../')) return {};
- const managed = managedPaths.some((pattern) => minimatch(relative, pattern));
+ const managed = managedPaths.some((pattern) => i_minimatch(relative, pattern));
  if (managed) return {};
  return {
  Program(node) {

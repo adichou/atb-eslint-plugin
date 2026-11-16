@@ -12,11 +12,11 @@ import { createConfig as createLayoutConfig } from './scripts/config.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
-// 本仓专属事实：package.json 分区（parser + 本地来源白名单）；布局目录全部走默认。
+// 本仓专属事实：package.json 分区（parser）；布局目录全部走默认。litenvi-node 的 file:
+// 本地来源是开发分支联调形态，no-loose-dependency-specs 不检（main 分支守护属交付流程）。
 const repoLayout = {
   packageJson: {
     parser: packageJsonPlugin.configs.recommended.languageOptions.parser,
-    localWhitelist: [{ name: 'litenvi-node', spec: 'file:../litenvi-node' }],
   },
 };
 

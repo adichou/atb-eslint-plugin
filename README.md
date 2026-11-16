@@ -20,23 +20,27 @@ ATB 访问级别与测试边界 ESLint 规则集。解决两个问题：**代码
 | 规则 | 管什么 |
 | --- | --- |
 | `atb/no-out-of-level-access` | f_ 跨文件、i_ 测试触达、t_ 生产消费；保留模块对象来源，普通函数返回值视为数据不传播接口身份。依赖包与 node: 的 f_/i_ 由其所属项目检查，t_ 名例外——生产禁用（名字即声明，不读依赖源码） |
-| `atb/no-wrong-access-level` | 非导出方法必须 f_；非导出绑定不得用 i_/t_ 前缀；测试文件导出必须 t_；函数返回对象树中显式前缀键的级别须与函数同级或为 f_（无前缀键随句柄不核级） |
-| `atb/no-wrong-access-comment` | 注释对账：「私有/内部/测试专用/外部」标注须与前缀及导出情况一致（缺失不报） |
-| `atb/no-undeclared-dependencies-imports` | 未声明依赖三级判定链：dependencies(含 optional)→peerDependencies→devPaths 内文件+devDependencies；本包自引用（specifier 包名 = 本包名）放行 |
-| `atb/no-dependency-cycles` | 受管模块间本地依赖循环：相对导入依赖图回溯，成环即报出完整环链；裸包名与 node: 内建不参与建图 |
+| `atb/no-wrong-access-level` | 非导出方法必须 f_；非导出绑定不得用 i_/t_ 前缀；测试文件导出必须 t_；非入口面文件（manifest main/exports 之外）不得挂公开/t_ 具名导出——公开/t_ 属于对外接口面，内部文件导出面用 i_；函数返回对象树中显式前缀键的级别须与函数同级或为 f_（无前缀键随句柄不核级）；注释对账：方法紧邻注释的级别标注（私有/内部/测试专用/外部）须与前缀及导出情况一致（缺失不报，原 no-wrong-access-comment 并入） |
+| `atb/no-undeclared-dependencies-imports` | 未声明依赖三级判定链：dependencies(含 optional)→peerDependencies→开发路径文件（testDir、buildToolDir、根配置 eslint.config.mjs 三源并集）+devDependencies；本包自引用（specifier 包名 = 本包名）放行；不设 ignores，不支持忽略 |
+| `atb/no-import-cycles` | 受管模块间本地依赖循环：相对导入依赖图回溯，成环即报出完整环链；裸包名与 node: 内建不参与建图 |
 | `atb/no-unmocked-litenvi-in-test` | 测试直接使用需开关的 litenvi 门面时，helper 链内必须有 t_mock/t_install 装配与 t_unmock 复位 |
 | `atb/no-bad-test-patterns` | 测试坏写法三合一：质量模式（缩减执行/恒真断言/吞错/固定睡眠…）+ SC 注释归属 + 伪造页面交互（route 桩/evaluate 写 fetch/裸 HTTP/合成点击） |
 | `atb/no-undeclared-entry-in-test` | 测试以 node 驱动生产脚本须命中 entry 清单；webPage 声明服务启动一致性 |
 | `atb/no-unmanaged-js` | 受管路径封闭集合：被枚举到的 JS 不在 managedPaths 内即报（fail-loud） |
-| `atb/no-loose-dependency-specs` | package.json 政策：禁 dist-tag；本地 file:/link: 来源须白名单登记且目标真实存在 |
+| `atb/no-loose-dependency-specs` | package.json 版本政策：禁全部 dist-tag 浮动标签（registry 依赖须精确版本）；本地 file:/link: 来源不检——开发分支平级仓联调形态，main 分支合入前替换为正式版本属交付流程约束（看板需求承接） |
 | `atb/no-silent-catch` | 空 catch/仅注释 catch 吞错（按需启用，存量须先语义迁移） |
+| `atb/no-unused-runtime-dependencies-in-package` | 清单声明但从未导入的运行时依赖（dependencies/optionalDependencies 检；dev/peer 如实留白）；与死导出/文件私有死绑定同属死代码块区——package.json 面经工厂 packageJson.parser 传入即接入，包内全量 js 正则扫描收集裸导入包名 |
+| `atb/no-unused-exports` | 导出但无消费方的死导出（按受众分类）：测试文件全检（测试文件不产出对外接口）；bin 直驱入口整放过（不走 import 加载器，死活不可判）；对外导入面文件（manifest main/exports/根配置）只检 i_（公开/t_ 受众可能在包外）；其余内部文件全检（npm scripts 直驱的脚本亦在此列——直驱脚本不该有导出）；f_ 导出移交 no-out-of-level-access。项目根自锚定 + AST 导出面 + 正则消费图（与依赖循环同口径）；touched（命名空间/副作用/动态字面量/export *）文件级保守豁免 |
+| `atb/no-unused-file-private-codes` | 文件内零引用的 f_ 绑定（文件私有死代码）：f_ 契约即仅本文件可用，作用域引用计数判准，无需跨文件分析；顶层绑定与 f_ 分级同界，嵌套局部不查（core no-unused-vars 领域，经典脚本桥接形态不代其表态）；导出面移交 no-out-of-level-access |
+| `atb/no-unused-imports` | 导入但未使用的绑定（死导入）：具名/默认/命名空间/别名全形态，作用域引用计数判准，报告带来源说明符；副作用导入（import 'x'）无绑定不检；CJS require 与普通变量留白（core no-unused-vars 领域） |
+| `atb/no-wrong-exports-in-package` | package.json 入口面（bin/main/exports）不得指向测试文件（testDir）或构建工具目录（buildToolDir）文件——它们不产出对外接口，入口面必须指向生产代码；exports 通配模式以探测文件近似判定（模式能命中内部目录即报）；跑在 package.json 上（JSON parser 接线，与 no-unused-runtime-dependencies-in-package 同块） |
 
 ## 配置键（贯穿各规则）
 
-- **scanPath**（依赖类规则）— 管辖路径：路径内文件受检，路径外不受检（由其所属仓库自查）。`no-wrong-access-level` 与 `no-out-of-level-access` 不设 scanPath：前者受检面由 ESLint files 决定；后者按受检文件向上查找最近 package.json 自锚定项目根（manifest、内外部判定与显示路径的基准），不落在任何包内的文件不受检。`no-undeclared-dependencies-imports` 同样不设 scanPath：自锚定所属包根读依赖清单与解析 devPaths，monorepo 各包按自身清单自查。
-- **testDir**（no-wrong-access-level、no-out-of-level-access）— 测试目录：测试代码唯一居所，目录内文件即测试身份——前者据此要求导出面 `t_`，后者据此放行 `t_`、禁 `i_` 触达。不设多目录与 fixture 名单，所有测试代码集中在 testDir 下管理。工厂原样透传（相对仓库根）；相对路径（缺省 `scripts/tests`）按 ESLint 运行目录解析，**以从仓库根运行 ESLint 为前提**（工厂与手动注册同此要求）——运行目录漂移（monorepo 子包、IDE 的 `eslint.workingDirectories`）会解析错位且静默失效，无法保证运行目录时传绝对路径。
+- **scanPath**（依赖类规则）— 管辖路径：路径内文件受检，路径外不受检（由其所属仓库自查）。`no-wrong-access-level` 与 `no-out-of-level-access` 不设 scanPath：前者受检面由 ESLint files 决定；后者按受检文件向上查找最近 package.json 自锚定项目根（manifest、内外部判定与显示路径的基准），不落在任何包内的文件不受检。`no-undeclared-dependencies-imports` 同样不设 scanPath：自锚定所属包根读依赖清单与解析开发路径（testDir/buildToolDir 同名桥接、根配置内置识别），monorepo 各包按自身清单自查。
+- **testDir**（no-wrong-access-level、no-out-of-level-access）— 测试目录：测试代码唯一居所，目录内文件即测试身份——前者据此要求导出面 `t_`，后者据此放行 `t_`、禁 `i_` 触达。不设多目录与 fixture 名单，所有测试代码集中在 testDir 下管理。仅支持相对仓库根的相对路径（缺省 `scripts/tests`，工厂原样透传），按 ESLint 运行目录解析——**前提约束：ESLint 运行目录必须在仓库根**（工厂与手动注册同此要求）。不支持绝对路径，传入即抛（fail-loud）：运行目录漂移（monorepo 子包、IDE 的 `eslint.workingDirectories`）属配置错误，直接暴露而非静默失效。
 - **requireItemNumber**（no-bad-test-patterns）— 单号注释要求开关：默认关；使用看板单号的项目可在自己的配置中开启。
-- **devPaths** — 开发代码路径 ＝ devDependencies 的开放范围（无缺省，须显式声明）。相对文件所属包根解析，命中即视为开发代码，第三级判定（devDependencies）仅对这些文件放行。
+- **buildToolDir**（缺省不启用）— 构建工具目录：构建期/开发期辅助支撑代码的角色目录——依赖 devDependencies 的多为构建期工具，生产期用的工具不在其列；同名桥接进依赖三级链规则。开发路径代码 = 三源并集：`testDir` 测试代码（同名桥接）、`buildToolDir` 构建工具、根配置 `eslint.config.mjs`（规则内置识别，不经参数，未声明依赖照抓）；第三级判定（devDependencies）仅对开发路径代码放行。
 
 ## 接入示例
 
@@ -49,20 +53,19 @@ import { createConfig } from 'atb-eslint-plugin/config.mjs';
 export default createConfig({
   root: import.meta.dirname,
   // 布局目录全部走默认（testDir='scripts/tests'、libDir='scripts/lib'、depsDir='node_modules'、
-  // packageJsonPath='package.json'），自定义布局时逐项覆盖：
-  // testDir: 'tests', libDir: 'src/lib', depsDir: 'vendor', packageJsonPath: 'package.json',
+  // buildToolDir 缺省不启用、packageJsonPath='package.json'），自定义布局时逐项覆盖：
+  // testDir: 'tests', libDir: 'src/lib', depsDir: 'vendor', buildToolDir: 'tools', packageJsonPath: 'package.json',
   entry: ['src/cli.mjs'],                // 业务入口清单（纯库项目留空设防）
   badTestExceptionFiles: [],             // 相对 root
   unmockedExceptionFiles: [],            // 相对测试根
   entryExceptionFiles: [],               // 相对测试根
   packageJson: {
     parser: packageJsonPlugin.configs.recommended.languageOptions.parser,
-    localWhitelist: [],
   },
 });
 ```
 
-不经工厂手动注册同样受支持：各项目在自己的 `eslint.config.mjs` 中注册插件，按源码、测试等文件范围组合规则与参数。规则选项中的相对路径（如 `no-wrong-access-level` 的 `testDir`）以**从仓库根运行 ESLint** 为前提（相对 ESLint 运行目录解析）；无法保证运行目录时传绝对路径（如 `import.meta.dirname` 拼接）。
+不经工厂手动注册同样受支持：各项目在自己的 `eslint.config.mjs` 中注册插件，按源码、测试等文件范围组合规则与参数。规则选项中的路径（如 `no-wrong-access-level` 的 `testDir`）一律为相对仓库根的相对路径（相对 ESLint 运行目录解析），**前提约束：ESLint 运行目录必须在仓库根**——不支持绝对路径，传入即抛。
 
 ```js
 import atbRules from 'atb-eslint-plugin';

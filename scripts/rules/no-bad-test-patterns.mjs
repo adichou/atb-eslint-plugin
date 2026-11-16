@@ -18,7 +18,7 @@
 // @playwright/test 三来源，作为规则内建常量不设配置旋钮；eslint-node-test 插件要求
 // ESLint >=10.4（Node 22.12.0 不满足，见条目选型记录），故本规则自研承接。
 import path from 'node:path';
-import { minimatch } from '../lib/attributions.mjs';
+import { i_minimatch } from '../lib/attributions.mjs';
 
 // 内建常量：runner/断言库来源与故障注入成员名（①②共用；改名导入同样命中，按绑定归因）。
 const INJECT_MEMBER_NAME = 't_inject';
@@ -57,7 +57,7 @@ function f_qualityVisitors(context) {
  const scanPath = path.resolve(options.scanPath || process.cwd());
  const filename = path.resolve(context.filename || context.getFilename());
  const relative = path.relative(scanPath, filename).split(path.sep).join('/');
- const isException = (options.exceptionFiles || []).some((pattern) => minimatch(relative, pattern));
+ const isException = (options.exceptionFiles || []).some((pattern) => i_minimatch(relative, pattern));
  const sourceCode = context.sourceCode || context.getSourceCode();
  const allowedOptions = new Set(options.allowedTestOptions || ['concurrency', 'timeout', 'skip', 'todo', 'only', 'signal', 'plan']);
  const assertionHelpers = new Set(options.assertionHelperNames || []);
@@ -402,7 +402,7 @@ function f_caseCommentVisitors(context) {
  const scanPath = path.resolve(options.scanPath || process.cwd());
  const filename = path.resolve(context.filename || context.getFilename());
  const relative = path.relative(scanPath, filename).split(path.sep).join('/');
- const isException = (options.exceptionFiles || []).some((pattern) => minimatch(relative, pattern));
+ const isException = (options.exceptionFiles || []).some((pattern) => i_minimatch(relative, pattern));
  const sourceCode = context.sourceCode || context.getSourceCode();
  const helpers = new Set(options.assertionHelperNames || []);
  // 单号要求按配置开关：默认关（非 atb 管理的项目没有 REQ-/BUG- 看板单号），atb 管理项目显式开启。
@@ -606,7 +606,7 @@ function f_fakeInteractionVisitors(context) {
  const scanPath = path.resolve(options.scanPath || process.cwd());
  const filename = path.resolve(context.filename || context.getFilename());
  const relative = path.relative(scanPath, filename).split(path.sep).join('/');
- const isException = (interaction.exceptionFiles || []).some((pattern) => minimatch(relative, pattern));
+ const isException = (interaction.exceptionFiles || []).some((pattern) => i_minimatch(relative, pattern));
  const sourceCode = context.sourceCode || context.getSourceCode();
 
  // evaluate 回调/脚本标记：向上找 .evaluate( 调用
