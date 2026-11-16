@@ -14,7 +14,7 @@ import packageJsonPlugin from 'eslint-plugin-package-json';
 import createConfigDefault, { createConfig } from 'atb-eslint-plugin/config.mjs';
 import atbRules from 'atb-eslint-plugin/plugin.mjs';
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 // 内置忽略层的完整模式清单（八层语义展开为 10 条 glob）。
 const BUILTIN_IGNORES = [
   'node_modules/**', '**/.*', '**/.*/**', '**/temp/**', '**/tmp/**',

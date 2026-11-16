@@ -16,7 +16,7 @@ import outOfLevelAccess from 'atb-eslint-plugin/rules/no-out-of-level-access.mjs
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const prodFile = path.join(repoRoot, 'src/flow.mjs');
 const testFile = path.join(repoRoot, 'scripts/tests/suite.test.mjs');
 // 前提约束：testDir 一律相对仓库根的相对路径（ESLint 运行目录必须在仓库根）。
@@ -47,13 +47,13 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: '生产文件导入 i_ 成员放行',
       filename: prodFile,
-      code: "import { i_run } from './helper.mjs';\ni_run();\n",
+      code: "import { i_run } from '../helper.mjs';\ni_run();\n",
       options,
     },
     {
       name: '测试文件导入 t_ 成员放行',
       filename: testFile,
-      code: "import { t_run } from './helper.mjs';\nt_run();\n",
+      code: "import { t_run } from '../helper.mjs';\nt_run();\n",
       options,
     },
     // ── 依赖包与 node: 内建：f_/i_ 前缀不解释（由其所属项目自查）；t_ 名例外，见 invalid ──
@@ -101,14 +101,14 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: '数值下标不是接口访问',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nfacade.handlers[0]();\n",
+      code: "import facade from '../facade.mjs';\nfacade.handlers[0]();\n",
       options,
     },
     // 场景：属性名不可静态解析（let 绑定）时只跳过该次判断，不因未知报错。
     {
       name: '不可解析属性名跳过',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nlet key = 't_reset';\nfacade[key]();\n",
+      code: "import facade from '../facade.mjs';\nlet key = 't_reset';\nfacade[key]();\n",
       options,
     },
     // 场景：动态加载目标不可静态解析时停止归因。
@@ -122,14 +122,14 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: '转调包装合规访问放行',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nfunction f_wrap(m) { return m.query(); }\nf_wrap(facade);\n",
+      code: "import facade from '../facade.mjs';\nfunction f_wrap(m) { return m.query(); }\nf_wrap(facade);\n",
       options,
     },
     // 场景：测试文件 re-export t_ 面名放行。
     {
       name: '测试文件 re-export t_ 放行',
       filename: testFile,
-      code: "export { t_thing } from './helper.mjs';\n",
+      code: "export { t_thing } from '../helper.mjs';\n",
       options,
     },
   ],
@@ -182,7 +182,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 'f_ 跨文件导入报告',
       filename: prodFile,
-      code: "import { f_run } from './helper.mjs';\n",
+      code: "import { f_run } from '../helper.mjs';\n",
       options,
       output: null,
       errors: [{ messageId: 'filePrivateAccess', data: { name: 'f_run' }, type: 'Identifier' }],
@@ -190,7 +190,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 'f_ 经模块对象访问报告',
       filename: prodFile,
-      code: "import helper from './helper.mjs';\nhelper.f_run();\n",
+      code: "import helper from '../helper.mjs';\nhelper.f_run();\n",
       options,
       output: null,
       errors: [{ messageId: 'filePrivateAccess', data: { name: 'f_run' }, type: 'Identifier' }],
@@ -199,7 +199,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 'i_ 测试导入报告',
       filename: testFile,
-      code: "import { i_run } from './helper.mjs';\n",
+      code: "import { i_run } from '../helper.mjs';\n",
       options,
       output: null,
       errors: [{
@@ -224,7 +224,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 生产导入报告',
       filename: prodFile,
-      code: "import { t_run } from './helper.mjs';\n",
+      code: "import { t_run } from '../helper.mjs';\n",
       options,
       output: null,
       errors: [{
@@ -237,7 +237,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 改名导入仍查原名报告',
       filename: prodFile,
-      code: "import { t_run as run } from './helper.mjs';\n",
+      code: "import { t_run as run } from '../helper.mjs';\n",
       options,
       output: null,
       errors: [{
@@ -341,7 +341,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 经模块对象访问报告',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nfacade.t_reset();\n",
+      code: "import facade from '../facade.mjs';\nfacade.t_reset();\n",
       options,
       output: null,
       errors: [{
@@ -354,7 +354,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 经解构报告',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nconst { t_reset } = facade;\n",
+      code: "import facade from '../facade.mjs';\nconst { t_reset } = facade;\n",
       options,
       output: null,
       errors: [{
@@ -367,7 +367,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 经别名转存报告',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nconst alias = facade;\nalias.t_reset();\n",
+      code: "import facade from '../facade.mjs';\nconst alias = facade;\nalias.t_reset();\n",
       options,
       output: null,
       errors: [{
@@ -380,7 +380,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 经转调包装报告',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nfunction f_wrap(m) { return m.t_reset(); }\nf_wrap(facade);\n",
+      code: "import facade from '../facade.mjs';\nfunction f_wrap(m) { return m.t_reset(); }\nf_wrap(facade);\n",
       options,
       output: null,
       errors: [{
@@ -393,7 +393,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: 't_ 经静态计算键报告',
       filename: prodFile,
-      code: "import facade from './facade.mjs';\nfacade['t_reset']();\n",
+      code: "import facade from '../facade.mjs';\nfacade['t_reset']();\n",
       options,
       output: null,
       errors: [{
@@ -406,7 +406,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     {
       name: '生产文件 re-export t_ 报告',
       filename: prodFile,
-      code: "export { t_x } from './helper.mjs';\n",
+      code: "export { t_x } from '../helper.mjs';\n",
       options,
       output: null,
       errors: [{

@@ -11,7 +11,7 @@ import unusedImports from 'atb-eslint-plugin/rules/no-unused-imports.mjs';
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const prodFile = path.join(repoRoot, 'src/flow.mjs');
 
 const tester = new RuleTester({

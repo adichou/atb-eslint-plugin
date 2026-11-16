@@ -33,8 +33,10 @@
 //   eslint-plugin-package-json）即启用清单面三件（未使用运行时依赖、入口面指向核验、
 //   dist-tag 禁令）；本地来源（file:/link:）不检——开发分支联调形态，main 分支守护归交付流程。
 // - packageJsonPath（缺省 'package.json'）：package.json 面规则的文件目标（相对 root）。
+// - uiTest（缺省 null 不传）：UI 分区接线（测试三分区模型）——{ enabled（缺省 true）, startup }
+//   启动命令为「入口文件 + 参数」词序列，入口文件必须在 package.json bin 声明块中声明。
 // 其余布局与纪律选项（badTestExceptionFiles / badTestOptions / unmockedExceptionFiles /
-// unmockedOptions / entryExceptionFiles / webPage）随对应规则块启用逐项回归，
+// unmockedOptions）随对应规则块启用逐项回归，
 // 各注释块内标注了该块所需的选项。
 import path from 'node:path';
 import atbRules from './plugin.mjs';
@@ -51,6 +53,7 @@ export function createConfig({
   ignores = [],
   plugins = {},
   packageJson = {},
+  uiTest = null,
   packageJsonPath = 'package.json',
 } = {}) {
   if (!root || !path.isAbsolute(root)) {
@@ -191,14 +194,15 @@ export function createConfig({
     },
   },
   
-  // ---- 测试入口驱动白名单（测试以 node 驱动生产脚本须命中 entry 清单） ----------
-  // testDir 同名桥接受检面；entry/webPage/entryExceptionFiles 由调用方按需传入
-  //（入口事实源演进为 package.json 声明——方案讨论中，接入前 entry 须显式声明）。
+  // ---- 测试三分区入口模型：测试文件必须归入 bin/export/ui 分区，各分区绑定入口纪律 ----
+  // bin：驱动目标 ∈ package.json bin 声明；export：import ∈ exports/main 声明面；
+  // ui（按 uiTest 启用）：驱动匹配 uiTest.startup 命令（入口文件 ∈ bin）。testDir 同名桥接；
+  // uiTest 由调用方传入（{ enabled, startup }，enabled 缺省 true）。
   {
     files: f_jsFilesUnder(testDir),
     languageOptions: { ...jsLanguage },
     rules: {
-      'atb/no-undeclared-entry-in-test': ['error', { testDir }],
+      'atb/no-undeclared-entry-in-test': ['error', { testDir, ...(uiTest ? { uiTest } : {}) }],
     },
   },
   // ---------- playwright 守卫三件套：调用方注册 playwright 插件时接线（异步等待/固定睡眠/force 选项） ----------

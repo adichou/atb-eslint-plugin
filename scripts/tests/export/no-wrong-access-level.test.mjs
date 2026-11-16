@@ -13,7 +13,7 @@ import wrongAccessLevel from 'atb-eslint-plugin/rules/no-wrong-access-level.mjs'
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 // 生产文件与测试文件样本：测试文件落在 testDir 目录内，生产文件在目录外；faceFile 为本仓
 // 真实对外导入面文件（package.json exports './config.mjs' → scripts/config.mjs）——入口面
 // 核验按真实 manifest 判定，RuleTester 只 lint 传入 code。
@@ -53,7 +53,7 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     // 场景：名单别名导出看面名（exported 名），面名为 t_ 即放行。
     { name: '测试文件别名导出 t_ 面名放行', filename: testFile, code: 'function t_run() {}\nexport { t_run as t_case };\n', options },
     // 场景：re-export（export-from）同样按面名核验，t_ 面名放行。
-    { name: '测试文件 re-export t_ 面名放行', filename: testFile, code: "export { t_thing } from './dep.mjs';\n", options },
+    { name: '测试文件 re-export t_ 面名放行', filename: testFile, code: "export { t_thing } from '../dep.mjs';\n", options },
     // 场景：默认导出无名字面，不参与 t_ 要求（消费方自带名，前缀体系不适用）。
     { name: '测试文件默认导出不参与', filename: testFile, code: 'export default function run() {}\n', options },
     { name: '测试文件默认导出对象不参与', filename: testFile, code: 'export default {};\n', options },
@@ -224,7 +224,7 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     {
       name: '测试文件 re-export 无前缀面名报告',
       filename: testFile,
-      code: "export { thing } from './dep.mjs';\n",
+      code: "export { thing } from '../dep.mjs';\n",
       options,
       output: null,
       errors: [{ messageId: 'testExportLevel', data: { name: 'thing' }, type: 'Identifier' }],

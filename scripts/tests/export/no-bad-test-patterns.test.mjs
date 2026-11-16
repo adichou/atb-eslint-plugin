@@ -13,7 +13,7 @@ import noBadTestPatterns from 'atb-eslint-plugin/rules/no-bad-test-patterns.mjs'
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 // 虚拟受检文件名：仅参与 exceptionFiles 的相对路径匹配，不做真实文件访问。
 const exemptFile = path.join(repoRoot, 'scripts/tests/quality-exempt.test.mjs');
 const pageTestFile = path.join(repoRoot, 'scripts/tests/page-interaction.test.mjs');

@@ -9,7 +9,7 @@ import noSilentCatch from 'atb-eslint-plugin/rules/no-silent-catch.mjs';
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 // 虚拟受检文件名：仅参与 exceptionFiles 的相对路径匹配，不做真实文件访问。
 const filename = path.join(repoRoot, 'scripts/tests/quality-exempt.test.mjs');
 const tester = new RuleTester({

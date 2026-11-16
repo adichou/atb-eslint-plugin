@@ -25,7 +25,7 @@ ATB 访问级别与测试边界 ESLint 规则集。解决两个问题：**代码
 | `atb/no-import-cycles` | 受管模块间本地依赖循环：相对导入依赖图回溯，成环即报出完整环链；裸包名与 node: 内建不参与建图 |
 | `atb/no-unmocked-litenvi-in-test` | 测试直接使用需开关的 litenvi 门面时，helper 链内必须有 t_mock/t_install 装配与 t_unmock 复位 |
 | `atb/no-bad-test-patterns` | 测试坏写法三合一：质量模式（缩减执行/恒真断言/吞错/固定睡眠…）+ SC 注释归属 + 伪造页面交互（route 桩/evaluate 写 fetch/裸 HTTP/合成点击） |
-| `atb/no-undeclared-entry-in-test` | 测试以 node 驱动生产脚本须命中 entry 清单；webPage 声明服务启动一致性 |
+| `atb/no-undeclared-entry-in-test` | 测试三分区入口模型：测试文件必须归入 testDir 下 bin/export/ui 分区（ui 按 uiTest 启用），分区外一律报——bin 分区驱动目标 ∈ package.json bin 声明块；export 分区 import ∈ exports/main 声明面；ui 分区驱动匹配 uiTest.startup（node 命令 = 入口文件 + 参数，入口文件 ∈ bin，自洽校验）；testDir 基建互驱/互导放行；非 *.test.* 基建文件不受分区约束；无 entry 手写清单与 exceptionFiles 豁免 |
 | `atb/no-unmanaged-js` | 受管路径封闭集合：被枚举到的 JS 不在 managedPaths 内即报（fail-loud） |
 | `atb/no-loose-dependency-specs` | package.json 版本政策：禁全部 dist-tag 浮动标签（registry 依赖须精确版本）；本地 file:/link: 来源不检——开发分支平级仓联调形态，main 分支合入前替换为正式版本属交付流程约束（看板需求承接） |
 | `atb/no-silent-catch` | 空 catch/仅注释 catch 吞错（按需启用，存量须先语义迁移） |

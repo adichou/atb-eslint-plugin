@@ -14,7 +14,7 @@ import undeclaredDeps from 'atb-eslint-plugin/rules/no-undeclared-dependencies-i
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 // 生产文件与根配置样本：生产文件不在任何开发路径内，根配置命中内置识别。
 const prodFile = path.join(repoRoot, 'src/flow.mjs');
 const rootConfigFile = path.join(repoRoot, 'eslint.config.mjs');
@@ -31,7 +31,7 @@ tester.run('no-undeclared-dependencies-imports', undeclaredDeps, {
     // 场景：node: 内置模块不参与判定。
     { name: 'node: 内置放行', filename: prodFile, code: "import { parse } from 'node:util';\n" },
     // 场景：相对导入不经依赖判定。
-    { name: '相对导入放行', filename: prodFile, code: "import { helper } from './helper.mjs';\n" },
+    { name: '相对导入放行', filename: prodFile, code: "import { helper } from '../helper.mjs';\n" },
     // 场景：包名自引用（specifier 包名 = 本包名）是 Node 一等用法，直接放行。
     { name: '包名自引用放行', filename: prodFile, code: "import { createConfig } from 'atb-eslint-plugin/config.mjs';\n" },
     // 场景：根配置 eslint.config.mjs 内置识别为开发代码——devDependencies 放行。
