@@ -118,6 +118,7 @@ export default {
  }],
  messages: {
  unusedExport: "导出 '{{name}}' 无任何消费方：受管图内无人导入（入口面与动态消费已豁免），死导出应删除或接入消费方",
+ unusedExportSelfUse: "导出 '{{name}}' 无跨文件消费方，但本文件内有使用：死的只是导出面——去掉 export 关键字保留实现（仅本文件使用请改 f_ 前缀）",
  unusedInternalOnFace: "对外导入面文件的 i_ 导出 '{{name}}' 在本仓内无消费方：i_ 声明包内协作，挂在公共导入面上却无人用，应删除或接入消费方",
  },
  },
@@ -152,15 +153,29 @@ export default {
  const sourceCode = context.sourceCode || context.getSourceCode();
  const inbound = consumers.get(filename);
  const isUsed = (name) => Boolean(inbound && inbound.get(name));
+ // 文件内自用检测（作用域引用计数，与 no-unused-file-private 同骨架）：导出名在本文件内
+ // 有引用（排除声明与导出名单自身）→ 修复指引是「去 export 保留实现」而非「删除」。
+ const globalScope = sourceCode.getScope(sourceCode.ast);
+ const topScopes = [globalScope, ...globalScope.childScopes.filter((s) => s.type === 'module')];
+ const selfReferenced = new Set();
+ for (const scope of topScopes) {
+ for (const [name, binding] of scope.set) {
+ const realRefs = binding.references.filter((ref) => !binding.defs.some((d) => d.name === ref.identifier));
+ if (realRefs.length > 0) selfReferenced.add(name);
+ }
+ }
  // 分类查面：f_ 导出一律移交 no-out-of-level-access（filePrivateExport）；导入面只检 i_
  //（消息区分：挂公共面却无人用的包内协作声明）；测试文件与内部文件检全部具名导出。
  const reportIfDead = (node, name) => {
  if (!name || name.startsWith('f_')) return;
  if (onImportFace && !name.startsWith('i_')) return;
  if (isUsed(name)) return;
+ // 文件内自用：实现活着，死的只是导出面——指引「去 export」而非删除（防误删运行时代码）。
+ const messageId = onImportFace ? 'unusedInternalOnFace'
+ : selfReferenced.has(name) ? 'unusedExportSelfUse': 'unusedExport';
  context.report({
  node,
- messageId: onImportFace ? 'unusedInternalOnFace': 'unusedExport',
+ messageId,
  data: { name },
  });
  };

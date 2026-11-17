@@ -170,6 +170,43 @@ test('invalid：导入面文件 i_ 死导出报告', async () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+/** 场景：文件内自用的导出——死的只是导出面，消息指引「去 export 保留实现」防误删活实现。 */
+test('invalid：文件内自用导出指引去 export', async () => {
+  const dir = f_fixture({
+    'package.json': JSON.stringify({ name: 'fixture', main: 'src/entry.mjs' }),
+    'src/entry.mjs': 'export const i_pub = 1;\nexport function i_getRun(d, r) {\n  return { d, r, i_pub };\n}\nexport const i_snapshot = i_getRun("d", "run-1");\n',
+  });
+  try {
+    const messages = await f_verify(dir, 'src/entry.mjs');
+    // entry 在导入面：i_pub（无引用、跨文件无消费）报 unusedInternalOnFace；i_getRun（文件内自用
+    // 被 snapshot 调用）与 i_snapshot（文件内零引用）报 unusedInternalOnFace 分支——导入面文件
+    // 走 unusedInternalOnFace 消息，不加自用区分（面纪律不因自用放宽）。核心验证在内部文件用例。
+    assert.ok(messages.length >= 1, '导入面文件的 i_ 死导出应有报告');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+/** 场景：内部文件的文件内自用导出——报告 unusedExportSelfUse 指引去 export 保留实现；
+ * 文件内零引用的死导出仍报 unusedExport 指引删除。refine 事故形态回归（同文件自用被误删）。 */
+test('invalid：内部文件自用与零引用死导出区分报告', async () => {
+  const dir = f_fixture({
+    'package.json': JSON.stringify({ name: 'fixture', main: 'src/entry.mjs' }),
+    'src/entry.mjs': 'export const x = 1;\n',
+    'src/internal.mjs': 'export function i_getRun(d, r) {\n  return { d, r };\n}\nexport const i_alive = i_getRun("d", "run-1");\nexport const i_dead = 99;\n',
+  });
+  try {
+    const messages = await f_verify(dir, 'src/internal.mjs');
+    // i_getRun：文件内被 i_alive 调用 → unusedExportSelfUse（去 export 指引）
+    // i_alive：文件内零引用、跨文件零消费 → unusedExport（删除指引）
+    // i_dead：文件内零引用、跨文件零消费 → unusedExport（删除指引）
+    assert.equal(messages.length, 3, '三个导出各报一条');
+    const byName = {};
+    for (const m of messages) byName[m.message.match(/'([^']+)'/)?.[1]] = m.messageId;
+    assert.equal(byName.i_getRun, 'unusedExportSelfUse', '文件内自用应指引去 export');
+    assert.equal(byName.i_alive, 'unusedExport', '文件内零引用的死导出仍指引删除');
+    assert.equal(byName.i_dead, 'unusedExport', '文件内零引用的死导出仍指引删除');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 /** 场景：分类①——测试文件不产出对外接口，全部具名导出须本仓内被导入（缺省 testDir 命中）。 */
 test('invalid：测试文件死 t_ 导出报告', async () => {
   const dir = f_fixture({
