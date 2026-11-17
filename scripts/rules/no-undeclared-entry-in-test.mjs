@@ -1,221 +1,162 @@
-// atb/no-undeclared-entry-in-test — 测试三分区入口模型：bin / export / ui。
-// 测试文件（*.test.*）必须落在 testDir 下三个分区子目录之一，分区即测试类型声明：
-// - bin/：命令业务测试——进程驱动（spawn 家族，node + 脚本）目标必须 ∈ package.json bin
-//   声明块的目标集合（命令参数自由，测的就是命令业务）；testDir 内互驱（测试基建 runner）
-//   放行；目标静态不可解析 fail-loud 报错。
-// - export/：导出 API 业务测试——import 的生产模块必须 ∈ package.json exports/main 声明面
-// （面内文件的公开函数与成员即测试入口）；testDir 内互导、node: 内建与依赖包放行；相对
-//   说明符解析为受管文件但不在声明面即报。静态边界：解析不到目标（不存在/出根）放行不误报。
-// - ui/：用户界面业务测试（按 uiTest 参数启用）——进程驱动必须匹配 uiTest.startup 声明的
-//   node 命令（入口文件 + 参数，驱动参数以声明参数为前缀）；startup 的入口文件必须在 bin
-//   声明块中声明（自洽校验，配置错每测试文件报告直至修正）。
-// 分区外兜底：测试文件不在三个分区目录内（或 ui 分区未启用却出现 ui/ 测试）一律报错——
-// 每篇测试必须先回答「测的是哪类业务」。非测试文件（fixtures / 世界装配 / helpers 基建）
-// 不受分区约束。
-// 入口事实源全部自锚定包根读 manifest（i_entryFacesOf，与死导出/入口面指向核验共享），
-// monorepo 各包自查；无手写 entry 清单、无 exceptionFiles 豁免。testDir 与家族同名同语义
-//（相对 ESLint 运行目录，绝对路径传入即抛）。静态边界：不追运行时传值；exec 字符串形态
-// 仅识别 'node <script> [args…]' 前缀词序列。
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
+// 测试文件按 bin/export/ui/config 声明类型，并核验实际业务入口或配置读取与字段断言。
+// 静态分析只证明可解析的调用关系，不执行测试、业务模块或字符串形式的受检代码。
 import path from 'node:path';
-import { i_entryFacesOf, i_evaluateStaticString, i_minimatch, i_projectRootOf } from '../lib/attributions.mjs';
+import { i_projectRootOf } from '../lib/attributions.mjs';
+import { i_hookEntries } from '../lib/hook-entries.mjs';
+import { i_testModuleExceptionsSchema, i_validModuleExceptionFile, i_moduleExceptionAllows } from '../lib/test-module-exceptions.mjs';
+import { i_configEntries, i_configTestName, i_configTestEvidence } from '../lib/config-test-analysis.mjs';
+import { i_testEntryManifest, i_testCommandWords, i_resolveTestModule, i_isTestImportEntry, i_analyzeTestEntries } from '../lib/test-entry-analysis.mjs';
 
-const DEFAULT_TEST_DIR = 'scripts/tests';
-const f_DRIVE_METHODS = new Set(['spawn', 'spawnSync', 'exec', 'execFileSync', 'execFile', 'execSync']);
-const f_NODE_BASENAMES = new Set(['node', 'node.exe']);
-const JS_EXT = /\.(?:js|mjs|cjs)$/;
-const TEST_FILE = /\.test\.[cm]?js$/;
-
-// 私有：归一相对路径（posix 分隔符）
-function f_rel(from, to) {
- return path.relative(from, to).split(path.sep).join('/');
+// 私有：路径包含关系按完整目录段判定。
+function f_inside(root, file) {
+  const relative = path.relative(root, file);
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
-// 私有：相对说明符 → 受管文件路径（补扩展名与 /index.*；不存在返回 null）。
-function f_resolveModule(dir, spec) {
- if (!spec.startsWith('.')) return null;
- const base = path.resolve(dir, spec);
- const candidates = JS_EXT.test(spec) ? [base] : [
- `${base}.js`, `${base}.mjs`, `${base}.cjs`,
- path.join(base, 'index.js'), path.join(base, 'index.mjs'), path.join(base, 'index.cjs'),
- ];
- for (const candidate of candidates) {
- if (fs.existsSync(candidate)) return candidate;
- }
- return null;
+// 私有：动态值只允许出现在端口或查询参数，主机与首页路径必须可确认。
+function f_matchesIndex(url, index) {
+  if (typeof url !== 'string') return false;
+  const match = url.match(/^http:\/\/127\.0\.0\.1:(\d+|__dynamic__)(\/[^?#]*)?(?:[?#].*)?$/);
+  if (!match) return false;
+  const port = match[1];
+  return (port === '__dynamic__' || Number(port) > 0 && Number(port) <= 65535) && (match[2] || '/') === index;
 }
 
 export default {
- meta: {
- type: 'problem',
- docs: { description: '测试三分区入口模型：测试文件必须归入 bin/export/ui 分区，各分区绑定入口纪律（bin 命令驱动 / export 声明面 import / ui 按 startup 命令）' },
- schema: [{
- type: 'object',
- properties: {
- testDir: { type: 'string' },
- uiTest: {
- type: 'object',
- properties: {
- enabled: { type: 'boolean' },
- startup: { type: 'string' },
- },
- additionalProperties: false,
- },
- },
- additionalProperties: false,
- }],
- messages: {
- testOutsidePartitions: "测试文件 '{{file}}' 不在测试分区（bin/export/ui）内：每篇测试必须归入一个分区声明所测业务——bin（命令业务）/ export（导出 API 业务）/ ui（界面业务，按 uiTest 启用）",
- undeclaredEntry: "bin 分区测试的驱动目标 '{{file}}' 不在 package.json bin 声明块：命令业务测试只能经 bin 声明的入口文件驱动",
- unresolvableEntry: "进程驱动的脚本目标无法静态解析，请改为明确路径常量以便入口核验",
- importOffExportFace: "export 分区测试 import 的 '{{file}}' 不在 package.json exports/main 声明面：导出 API 业务测试只能经声明面文件的公开成员测试",
- driveOffStartup: "ui 分区测试的驱动与 uiTest.startup（'{{startup}}'）不符：UI 业务测试必须按 startup 声明的 node 命令（入口文件与参数）驱动",
- configStartupMissing: "uiTest 已启用但未声明 startup：UI 分区启用时必须声明启动命令（入口文件 + 参数，入口文件须在 bin 声明块中声明）",
- startupOffBin: "uiTest.startup 的入口文件 '{{file}}' 不在 package.json bin 声明块：UI 启动命令的入口必须经 bin 声明",
- },
- },
+  meta: {
+    type: 'problem',
+    docs: { description: '按测试文件检查入口：bin 调用声明命令、export 导入公开入口、ui 启动并导航首页、config 读取登记配置并断言关键字段；追踪实际调用的 helper' },
+    schema: [{
+      type: 'object',
+      properties: {
+        testDir: { type: 'string' },
+        hooksDir: { type: 'string' },
+        packageJsonPath: { type: 'string' },
+        exceptionFilesAllowModules: i_testModuleExceptionsSchema,
+        uiTest: {
+          type: 'object',
+          properties: { enabled: { type: 'boolean' }, startup: { type: 'string' }, index: { type: 'string' } },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    }],
+    messages: {
+      testOutsidePartitions: "测试文件 '{{file}}' 不在测试分区（bin/export/ui/config）内：每篇测试必须归入一个分区声明所测业务",
+      undeclaredConfigTest: 'config 分区只能测试已登记的 packageJsonPath、eslint.config.mjs 或 hooksDir 配置，文件名须采用对应的约定守护名',
+      configTestNoRead: 'config 分区测试必须实际导入或通过已绑定的 fs API 读取对应配置；路径字符串、未调用函数和假读取对象不算证据',
+      configTestNoFieldAssertion: 'config 分区测试必须用 node:assert 对真实配置读取结果断言关键字段，假对象与断言说明文本不能代替',
+      undeclaredEntry: "bin 分区测试的驱动目标 '{{file}}' 不在 package.json bin 声明块或 hooksDir 的 hook 命令声明中",
+      unresolvableEntry: '进程驱动的脚本目标无法静态解析，请改为明确路径常量以便入口核验',
+      importOffExportFace: "export 分区测试 import 的 '{{file}}' 不在 package.json exports/main 声明面：导出 API 业务测试只能经声明面文件测试",
+      driveOffStartup: "ui 分区测试没有执行 uiTest.startup（'{{startup}}'）要求的命令参数",
+      configStartupMissing: 'uiTest 已启用但未声明 startup：必须声明启动命令',
+      startupOffBin: "uiTest.startup 的入口文件 '{{file}}' 不在 package.json bin 声明块",
+      invalidIndexConfig: 'uiTest.index 必须是站内首页路径，例如 / 或 /index.html，不能包含协议、查询或片段',
+      spawnInExportPartition: 'export 分区测试的进程驱动放错分区或缺少原生用途登记：本包 bin 应移至 bin/ 或 ui/；本包公开子进程 API 可自测，原生对照或隔离进程须按文件登记 exceptionFilesAllowModules 的 node:child_process 模块与理由',
+      invalidModuleException: "exceptionFilesAllowModules 的 '{{file}}' 必须是相对 testDir 的单个代码文件，不允许绝对路径、越界或通配符",
+      missingBinEntry: 'bin 分区测试必须实际调用 package.json bin 声明块或 hooksDir 的 hook 命令文件；只导入 helper 或运行测试 runner 不算业务入口',
+      missingExportEntry: 'export 分区测试必须 import package.json exports/main 声明的任一文件；内建、第三方依赖和未调用的 helper 不算被测入口',
+      missingStartupCall: "ui 分区测试必须实际执行 uiTest.startup 命令（'{{startup}}'），可通过已调用的 helper 完成",
+      missingIndexNavigation: "ui 分区测试必须通过浏览器页面导航到 http://127.0.0.1:{port}{{index}}，可通过已调用的 helper 完成",
+      invalidIndexNavigation: "未找到符合约定的首页导航：应访问 http://127.0.0.1:{port}{{index}}，实际 '{{url}}'",
+      helperAnalysisFailed: "无法分析测试入口调用链 '{{file}}'：{{message}}",
+    },
+  },
+  create(context) {
+    const options = context.options[0] || {};
+    const cwd = context.cwd || context.getCwd();
+    const testDirInput = options.testDir || 'scripts/tests';
+    if (path.isAbsolute(testDirInput)) throw new Error(`testDir 必须是相对仓库根的相对路径，不接受绝对路径：${testDirInput}`);
+    const testDir = path.resolve(cwd, testDirInput);
+    const filename = path.resolve(context.filename || context.getFilename());
+    if (!f_inside(testDir, filename) || !/\.test\.[cm]?js$/.test(filename)) return {};
+    const root = i_projectRootOf(filename);
+    if (!root) return {};
+    const ui = options.uiTest;
+    const uiEnabled = !!ui && ui.enabled !== false;
+    const partition = path.relative(testDir, filename).split(path.sep)[0];
 
- create(context) {
- const options = context.options[0] || {};
- // testDir 与 no-wrong-access-level 同名同语义（前提约束：ESLint 运行目录必须在仓库根）。
- const cwd = context.cwd || context.getCwd();
- const testDirInput = options.testDir || DEFAULT_TEST_DIR;
- if (path.isAbsolute(testDirInput)) {
- throw new Error(`testDir 必须是相对仓库根的相对路径（前提约束：ESLint 运行目录必须在仓库根），不接受绝对路径：${testDirInput}`);
- }
- const testDir = path.resolve(cwd, testDirInput);
- const filename = path.resolve(context.filename || context.getFilename());
- if (f_rel(testDir, filename).startsWith('../')) return {};
- // 基建文件（非 *.test.*）不受分区约束——它们是测试装置不是测试用例。
- if (!TEST_FILE.test(path.basename(filename))) return {};
-
- const sourceCode = context.sourceCode || context.getSourceCode();
- // 入口事实源：自锚定包根读 manifest（binFaces 命令目标 / importFaces+patterns 导入面）。
- const projectRoot = i_projectRootOf(filename);
- if (projectRoot === null) return {};
- const { binFaces, importFaces, patterns } = i_entryFacesOf(projectRoot);
-
- // uiTest：显式传入才接线（enabled 缺省 true，可 false 关闭）；startup 为「入口文件 +
- // 参数」词序列，入口文件须 ∈ bin。未传参数 = 本仓无 UI 面，ui/ 不设区。
- const uiTest = options.uiTest || null;
- const uiEnabled = Boolean(uiTest) && uiTest.enabled !== false;
- const startupWords = uiEnabled && typeof uiTest.startup === 'string'
- ? uiTest.startup.trim().split(/\s+/).filter(Boolean)
- : [];
- const startupFile = startupWords.length ? path.resolve(projectRoot, startupWords[0]) : null;
- const partitions = ['bin', 'export', ...(uiEnabled ? ['ui'] : [])];
- const relTest = f_rel(testDir, filename);
- const partition = relTest.split('/')[0];
-
- function reportProgram(messageId, data) {
- context.report({ node: sourceCode.ast, messageId, data });
- }
-
- // 分区外兜底 + uiTest 自洽（配置错每测试文件报告直至修正）。
- if (!partitions.includes(partition)) {
- return {
- Program() {
- reportProgram('testOutsidePartitions', { file: relTest });
- },
- };
- }
- if (uiEnabled) {
- if (!startupFile) {
- return {
- Program() {
- reportProgram('configStartupMissing', {});
- },
- };
- }
- if (!binFaces.has(startupFile)) {
- return {
- Program() {
- reportProgram('startupOffBin', { file: startupWords[0] });
- },
- };
- }
- }
-
- // 静态求值：spawn 参数——首元素（脚本目标）必须可解析（入口核验对象）；后续参数尽力
- // 全静态（ui 前缀匹配用），含动态参数时返回 words=null（目标核验不受业务数据影响）。
- function f_argvWords(node) {
- if (node.type === 'ArrayExpression') {
- const elements = node.elements.filter(Boolean);
- if (!elements.length) return null;
- const head = i_evaluateStaticString(elements[0], sourceCode, filename);
- if (!head.resolved) return null;
- const words = [String(head.value)];
- for (const element of elements.slice(1)) {
- const evaluated = i_evaluateStaticString(element, sourceCode, filename);
- if (!evaluated.resolved) return { head: String(head.value), words: null };
- words.push(String(evaluated.value));
- }
- return { head: String(head.value), words };
- }
- const evaluated = i_evaluateStaticString(node, sourceCode, filename);
- if (!evaluated.resolved) return null;
- const words = String(evaluated.value).trim().split(/\s+/);
- return { head: words[0], words };
- }
-
- function f_checkDrive(node) {
- if (node.callee.type !== 'MemberExpression' || node.callee.computed) return;
- if (!f_DRIVE_METHODS.has(node.callee.property.name)) return;
- const execEval = node.arguments.length ? i_evaluateStaticString(node.arguments[0], sourceCode, filename): { resolved: false };
- const isNode = execEval.resolved && f_NODE_BASENAMES.has(path.posix.basename(String(execEval.value)));
- if (!isNode) return;
- const argv = node.arguments[1] ? f_argvWords(node.arguments[1]) : null;
- if (!argv || !argv.head) {
- context.report({ node: node.arguments[1] ?? node, messageId: 'unresolvableEntry' });
- return;
- }
- const targetAbs = path.isAbsolute(argv.head) ? argv.head : path.resolve(path.dirname(filename), argv.head);
- if (partition === 'bin') {
- // bin 分区：目标 ∈ bin 声明块；testDir 内互驱（测试基建 runner）放行。
- if (binFaces.has(targetAbs)) return;
- if (!f_rel(testDir, targetAbs).startsWith('../')) return;
- context.report({ node: node.arguments[1], messageId: 'undeclaredEntry', data: { file: argv.head } });
- return;
- }
- // ui 分区：驱动词序列须以 startup 声明（入口文件 + 参数）为前缀；参数含动态数据时
- // 只核入口文件匹配（前缀参数段无法静态比对，如实放行）。
- const declaredWords = startupWords.map((word, index) => (index === 0 ? path.resolve(projectRoot, word) : word));
- if (targetAbs !== declaredWords[0]) {
- context.report({ node: node.arguments[1], messageId: 'driveOffStartup', data: { startup: uiTest.startup } });
- return;
- }
- if (argv.words && argv.words.length < declaredWords.length) {
- context.report({ node: node.arguments[1], messageId: 'driveOffStartup', data: { startup: uiTest.startup } });
- return;
- }
- if (argv.words && !declaredWords.slice(1).every((word, index) => argv.words[index + 1] === word)) {
- context.report({ node: node.arguments[1], messageId: 'driveOffStartup', data: { startup: uiTest.startup } });
- }
- }
-
- function f_checkImport(node, specifier) {
- if (!specifier || !specifier.startsWith('.')) return; // 裸包名与 node: 放行
- const target = f_resolveModule(path.dirname(filename), specifier);
- if (!target) return; // 解析不到受管目标（不存在/出根）不误报
- if (!f_rel(testDir, target).startsWith('../')) return; // testDir 内互导放行
- const relRoot = f_rel(projectRoot, target);
- if (importFaces.has(target) || patterns.some((pattern) => i_minimatch(relRoot, pattern))) return;
- context.report({ node, messageId: 'importOffExportFace', data: { file: relRoot } });
- }
-
- const visitors = {};
- if (partition === 'bin' || partition === 'ui') {
- visitors.CallExpression = f_checkDrive;
- }
- if (partition === 'export') {
- visitors.ImportDeclaration = (node) => f_checkImport(node, node.source.value);
- visitors.ExportNamedDeclaration = (node) => { if (node.source) f_checkImport(node, node.source.value); };
- visitors.ExportAllDeclaration = (node) => f_checkImport(node, node.source.value);
- visitors.ImportExpression = (node) => {
- const evaluated = i_evaluateStaticString(node.source, sourceCode, filename);
- if (evaluated.resolved) f_checkImport(node, evaluated.value);
- };
- }
- return visitors;
- },
+    return {
+      'Program:exit'(node) {
+        let reported = false;
+        const report = (messageId, data = {}, location = node) => { reported = true; context.report({ node: location, messageId, data }); };
+        const exceptions = options.exceptionFilesAllowModules || [];
+        for (const item of exceptions) {
+          if (!i_validModuleExceptionFile(testDir, item.file)) {
+            report('invalidModuleException', { file: item.file }); return;
+          }
+        }
+        if (!['bin', 'export', 'config', ...(uiEnabled ? ['ui'] : [])].includes(partition)) {
+          report('testOutsidePartitions', { file: path.relative(testDir, filename) }); return;
+        }
+        let info;
+        try {
+          info = i_testEntryManifest(root);
+          const hooks = i_hookEntries(root, options.hooksDir);
+          info.scriptEntries = new Set([...info.bins, ...hooks.scripts]);
+          info.hookConfigs = new Set(hooks.configs.map(entry => path.resolve(root, entry.config)));
+        }
+        catch (error) { report('helperAnalysisFailed', { file: 'package.json', message: error.message }); return; }
+        if (partition === 'config') {
+          const entries = i_configEntries(root, options).filter(entry => i_configTestName(entry.config) === path.basename(filename));
+          if (!entries.length) { report('undeclaredConfigTest'); return; }
+          const evidence = entries.map(entry => i_configTestEvidence(filename, path.resolve(root, entry.config), entry.fields, context.languageOptions.parser, context.sourceCode.text, root));
+          if (!evidence.some(item => item.read && item.fieldAssert)) report(evidence.some(item => item.read) ? 'configTestNoFieldAssertion' : 'configTestNoRead');
+          return;
+        }
+        const startup = uiEnabled ? i_testCommandWords(ui.startup) || [] : [];
+        if (startup[0] === 'node' || startup[0] === 'node.exe') startup.shift();
+        if (uiEnabled && !startup.length) { report('configStartupMissing'); return; }
+        const startupFile = startup.length ? info.commands.get(startup[0]) || path.resolve(root, startup[0]) : null;
+        if (uiEnabled && !info.bins.has(startupFile)) { report('startupOffBin', { file: startup[0] }); return; }
+        const indexInput = ui?.index ?? '/';
+        if (uiEnabled && (!indexInput || /[:?#]|__dynamic__/.test(indexInput))) { report('invalidIndexConfig'); return; }
+        const index = `/${indexInput.replace(/^\/+/, '')}`;
+        const evidence = i_analyzeTestEntries({ context, filename, root, testDir, info });
+        for (const failure of evidence.failures) report('helperAnalysisFailed', { file: failure.file, message: failure.message }, failure.node);
+        if (partition === 'export') {
+          let found = false;
+          for (const item of evidence.imports) {
+            const target = i_resolveTestModule(root, info, item.file, item.specifier);
+            if (target && f_inside(testDir, target)) continue;
+            if (target && i_isTestImportEntry(root, info, target)) { found = true; continue; }
+            const self = item.specifier === info.manifest.name || item.specifier.startsWith(`${info.manifest.name}/`);
+            if (self || target && f_inside(root, target)) report('importOffExportFace', { file: target ? path.relative(root, target) : item.specifier }, item.node);
+          }
+          const nativeReference = i_moduleExceptionAllows(exceptions, testDir, filename, 'node:child_process');
+          for (const drive of evidence.drives) {
+            // 启动本包 bin 优先按命令分区处理；API 自测与原生对照登记均不能覆盖它。
+            const ownBin = info.scriptEntries.has(drive.target);
+            const native = drive.source === 'node:child_process' || drive.source === 'child_process';
+            if (!ownBin && (drive.selfPublicApi || native && nativeReference)) continue;
+            report('spawnInExportPartition', {}, drive.node);
+          }
+          if (!found && !reported) report('missingExportEntry');
+          return;
+        }
+        let found = false;
+        const mismatches = [];
+        for (const drive of evidence.drives) {
+          // 内联脚本可用于测试进程装配，但不能充当清单文件或服务启动的正向证据。
+          if (drive.mode === 'inline' || drive.mode === 'command') continue;
+          if (!drive.target) { report('unresolvableEntry', {}, drive.node); continue; }
+          if (partition === 'bin') {
+            if (info.scriptEntries.has(drive.target)) found = true;
+            else if (!f_inside(testDir, drive.target)) report('undeclaredEntry', { file: drive.head }, drive.node);
+          } else if (drive.target === startupFile && startup.slice(1).every((word, index) => drive.args?.[index + 1] === word)) found = true;
+          else mismatches.push(drive);
+        }
+        if (partition === 'bin') {
+          if (!found && !reported) report('missingBinEntry');
+          return;
+        }
+        if (!found && !reported) report(mismatches.length ? 'driveOffStartup' : 'missingStartupCall', { startup: ui.startup }, mismatches[0]?.node || node);
+        if (!evidence.navigations.some(item => f_matchesIndex(item.url, index)) && !reported) {
+          const navigation = evidence.navigations[0];
+          report(navigation ? 'invalidIndexNavigation' : 'missingIndexNavigation', { index, url: String(navigation?.url ?? '无法静态解析') }, navigation?.node || node);
+        }
+      },
+    };
+  },
 };

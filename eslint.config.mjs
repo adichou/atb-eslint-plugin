@@ -14,6 +14,8 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 // 本仓专属事实：package.json 分区（parser）；布局目录全部走默认。litenvi-node 的 file:
 // 本地来源是开发分支联调形态，no-loose-dependency-specs 不检（main 分支守护属交付流程）。
+// 项目文件均通过 lite-fs 内存夹具装配；配置测试保留真实 ESLint 类，规则测试使用真实
+// RuleTester 或 Linter.verify。本仓测试无需原生环境模块的导入黑名单例外。
 const repoLayout = {
   packageJson: {
     parser: packageJsonPlugin.configs.recommended.languageOptions.parser,

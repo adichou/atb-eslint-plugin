@@ -2,19 +2,42 @@
 // 用例标题以 valid（期望放行 / 形态正确）/ invalid（期望抛错 / 命中报告）区分两类用例，
 // valid 组声明在前先执行，invalid 组在后。工厂为纯函数（无 fs / 无命令面），结构面直接
 // 断言产出数组的三块形态与选项契约；行为面经真实 ESLint 类（lintText + overrideConfig）
-// 执行——忽略豁免判定在 ESLint 类的文件面（Linter.verify 不做忽略），故行为面不走 Linter，
-// 验证通配符导入禁令、finally 安全与内置忽略层真实生效。
-import { test } from 'node:test';
+// 执行，保留 ESLint 对忽略文件与文件角色的处理；项目清单与源文件在 lite-fs 内存卷装配。
+// 每例独立项目并复位，验证通配符导入禁令、finally 安全与内置忽略层生效。
+import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import packageJsonPlugin from 'eslint-plugin-package-json';
 import createConfigDefault, { createConfig } from 'atb-eslint-plugin/config.mjs';
 import atbRules from 'atb-eslint-plugin/plugin.mjs';
+import { t_createFixture } from '../lint-fixture.mjs';
 
-const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+let repoRoot;
+
+// 工厂与 ESLint 保持真实实现；清单、依赖消费证据和配置守护证据由内存项目提供。
+beforeEach(() => {
+  repoRoot = t_createFixture({
+    'package.json': JSON.stringify({
+      name: 'atb-eslint-plugin',
+      type: 'module',
+      exports: { '.': './scripts/plugin.mjs' },
+      dependencies: { 'litenvi-node': '1.0.0' },
+      devDependencies: { eslint: '9.39.4' },
+    }),
+    'scripts/plugin.mjs': "import fs from 'litenvi-node/lite-fs.mjs';\nexport default { rules: {} };\n",
+    'scripts/lib/attributions.mjs': 'export function i_minimatch() {}\n',
+    'eslint.config.mjs': 'export default [];\n',
+    'scripts/tests/export/config.test.mjs': "const f_configs = ['package.json', 'eslint.config.mjs'];\n",
+    // 配置守护规则的证据面：假仓库作为「最佳模板仓库」自带两个守护测试（真实读取 + 字段断言），
+    // 依赖链用例不被配置守护块干扰。
+    'scripts/tests/export/package.test.mjs': "import assert from 'node:assert/strict';\nimport fs from 'node:fs';\nconst m = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));\nassert.equal(m.name, 'atb-eslint-plugin');\nassert.ok(Object.hasOwn(m.exports, '.'));\n",
+    'scripts/tests/export/eslint.config.test.mjs': "import assert from 'node:assert/strict';\nimport cfg from '../../../eslint.config.mjs';\nassert.ok(cfg.plugins !== undefined, 'plugins 在位');\n",
+  });
+});
+
+afterEach(() => { fs.t_unmock(); });
 // 内置忽略层的完整模式清单（八层语义展开为 10 条 glob）。
 const BUILTIN_IGNORES = [
   'node_modules/**', '**/.*', '**/.*/**', '**/temp/**', '**/tmp/**',
@@ -34,11 +57,11 @@ test('valid：合法 root 通过校验', () => {
   assert.doesNotThrow(() => createConfig({ root: repoRoot }), '绝对路径 root 应通过');
 });
 
-/** 场景：最佳模板形态只传 root，产出恰好十二块——内置忽略层、插件注册、三条内置基线、依赖三级链、死代码、访问级别分级、越级访问、lib 单向分层、循环导入与测试入口驱动白名单。 */
-test('valid：最佳模板产出十二块', () => {
+/** 场景：最佳模板形态只传 root，产出恰好十七块——内置忽略层、插件注册、三条内置基线、依赖三级链、死代码、访问级别分级、越级访问、lib 单向分层、循环导入、测试入口驱动白名单、测试环境模块黑名单、配置测试守护与门面装配纪律。 */
+test('valid：最佳模板产出十七块', () => {
   const config = createConfig({ root: repoRoot });
   assert.ok(Array.isArray(config), '产出应为 flat config 数组');
-  assert.equal(config.length, 12, '默认模板应恰好十二块：忽略层 / 插件注册 / 基线 1-3 / 依赖三级链 / 死代码 / 访问级别分级 / 越级访问 / lib 单向分层 / 循环导入 / 测试入口驱动白名单');
+  assert.equal(config.length, 17, '默认模板应恰好十七块：忽略层 / 插件注册 / 基线 1-3 / 依赖三级链 / 死代码 / 访问级别分级 / 越级访问 / lib 单向分层 / 循环导入 / 测试入口驱动白名单 / 测试环境模块黑名单 / 配置测试守护 / 门面装配纪律');
   assert.deepEqual(Object.keys(config[0]), ['ignores'], '首块应为纯忽略层');
   assert.deepEqual(Object.keys(config[1]), ['plugins'], '次块应为插件注册');
   assert.deepEqual(config[1].plugins, { atb: atbRules }, '缺省仅注册 atb 规则集');
@@ -88,22 +111,32 @@ test('valid：最佳模板产出十二块', () => {
   }], 'lib 单向分层：动态 import 禁令 + 通配符禁令自带（同名规则覆盖基线 1，须重新声明）');
   assert.deepEqual(config[10].files, ['**/*.js', '**/*.mjs', '**/*.cjs'], '循环导入块统一覆盖三扩展名');
   assert.deepEqual(config[10].rules, { 'atb/no-import-cycles': 'error' }, '循环导入块：项目根自锚定建图，无路径参数与豁免');
+  assert.deepEqual(config[12].files, ['scripts/tests/**/*.js', 'scripts/tests/**/*.mjs', 'scripts/tests/**/*.cjs'], '测试环境模块黑名单块以 testDir 为管辖面');
+  assert.deepEqual(config[12].rules, {
+    'atb/no-modules-import-in-test': ['error', {
+      testDir: 'scripts/tests',
+      deniedModules: ['node:fs', 'node:http', 'node:https', 'node:child_process', 'node:process'],
+      exceptionFilesAllowModules: [],
+    }],
+  }, '测试环境模块黑名单块：testDir 同名桥接 + 环境组缺省透传 + 例外清单独立参数（极性不混叠）');
+  assert.deepEqual(config[13].files, ['eslint.config.mjs'], '配置测试守护块锚定根配置文件');
+  assert.deepEqual(config[13].rules, {
+    'atb/no-missing-config-tests': ['error', { testDir: 'scripts/tests', packageJsonPath: 'package.json' }],
+  }, '配置测试守护块：testDir 与 packageJsonPath 同名桥接，守护对象固定双配置（约定名定位守护测试）');
+  assert.deepEqual(config[14].files, ['scripts/tests/**/*.js', 'scripts/tests/**/*.mjs', 'scripts/tests/**/*.cjs'], '门面装配纪律块以 testDir 为管辖面');
+  assert.deepEqual(config[14].rules, { 'atb/no-unmocked-litenvi-in-test': 'error' }, '门面装配纪律块：无参启用（受检面由 ESLint files 决定，其余选项走规则缺省）');
 });
 
 /** 场景：八层内置忽略逐层在位且精确，缺省无调用方追加。 */
 test('valid：内置忽略层精确形态', () => {
   const config = createConfig({ root: repoRoot });
   assert.deepEqual(config[0].ignores, BUILTIN_IGNORES, '缺省忽略层应为完整内置清单');
+  assert.equal(config.find(block => block.rules?.['atb/no-bad-test-patterns']).rules['atb/no-bad-test-patterns'], 'error', '测试质量规则必须默认启用且不提供文件例外');
 });
 
-/** 场景：调用方 ignores 追加在内置层之后，不覆盖内置项。 */
-test('valid：调用方 ignores 追加在尾', () => {
-  const config = createConfig({ root: repoRoot, ignores: ['vendor/**', 'playground/**'] });
-  const ignores = config[0].ignores;
-  for (const pattern of BUILTIN_IGNORES) {
-    assert.ok(ignores.includes(pattern), `内置忽略应保留：${pattern}`);
-  }
-  assert.deepEqual(ignores.slice(-2), ['vendor/**', 'playground/**'], '调用方 ignores 应追加在内置层之后');
+/** 场景：工厂不再接受自由追加忽略范围，旧入参必须明确拒绝。 */
+test('invalid：拒绝已删除的 ignores 入参', () => {
+  assert.throws(() => createConfig({ root: repoRoot, ignores: ['vendor/**'] }), /不支持.*ignores/, '旧 ignores 入参不能静默生效或被忽略');
 });
 
 /** 场景：清单面三件同块接线——js 面恒在；packageJson 面传 parser 即接入（紧随 js 面）。 */
@@ -112,14 +145,14 @@ test('valid：清单面随 parser 接入', async () => {
     root: repoRoot,
     packageJson: { parser: packageJsonPlugin.configs.recommended.languageOptions.parser },
   });
-  assert.equal(withParser.length, 13, '传入 parser 应产出十三块（清单面单块合并三规则）');
+  assert.equal(withParser.length, 18, '传入 parser 应产出十八块（清单面单块合并三规则）');
   assert.deepEqual(withParser[7].files, ['package.json'], 'packageJson 面以清单文件为目标');
   assert.deepEqual(withParser[7].rules, {
     'atb/no-unused-runtime-dependencies-in-package': 'error',
     'atb/no-wrong-exports-in-package': ['error', { testDir: 'scripts/tests', buildToolDir: '' }],
     'atb/no-loose-dependency-specs': 'error',
   }, '清单面单块：未使用运行时依赖 + 入口面指向核验 + dist-tag 禁令（本地来源不检）');
-  // 行为：真实 ESLint 执行——本仓 dependencies（litenvi-node）被导入，清单放行。
+  // 行为：真实 ESLint 执行——内存项目的运行时依赖被源文件导入，清单放行。
   const eslint = new ESLint({ overrideConfigFile: true, cwd: repoRoot, overrideConfig: withParser });
   const [result] = await eslint.lintText(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'), { filePath: 'package.json' });
   assert.deepEqual(result.messages, [], '被导入的运行时依赖应放行');
@@ -133,12 +166,15 @@ test('valid：depsDir 覆盖依赖忽略层', () => {
   assert.ok(createConfig({ root: repoRoot })[0].ignores.includes('node_modules/**'), '缺省依赖目录为 node_modules');
 });
 
-/** 场景：调用方 plugins 与 atb 并存注册，atb 身份保持不变。 */
-test('valid：plugins 合并注册', () => {
-  const customPlugin = { rules: {} };
-  const config = createConfig({ root: repoRoot, plugins: { custom: customPlugin } });
-  assert.equal(config[1].plugins.atb, atbRules, 'atb 应保持登记且为同一规则集实例');
-  assert.equal(config[1].plugins.custom, customPlugin, '调用方插件应并入注册');
+/** 场景：工厂固定注册自身规则，不接受额外插件入参。 */
+test('invalid：拒绝已删除的 plugins 入参', () => {
+  assert.throws(() => createConfig({ root: repoRoot, plugins: { custom: { rules: {} } } }), /不支持.*plugins/, '旧 plugins 入参应明确拒绝');
+  assert.deepEqual(createConfig({ root: repoRoot })[1].plugins, { atb: atbRules }, '内置 atb 插件注册必须保留');
+});
+
+/** 场景：原生对照只从模块例外登记授权，不再接受独立入参。 */
+test('invalid：拒绝已删除的 nativeProcessTests 入参', () => {
+  assert.throws(() => createConfig({ root: repoRoot, nativeProcessTests: [] }), /不支持.*nativeProcessTests/, '旧原生对照入参应明确拒绝');
 });
 
 /** 场景：默认导出与具名导出为同一工厂。 */
@@ -163,6 +199,21 @@ test('valid：布局选项按块启用状态回归', () => {
     'libDir 覆盖应反映进 lib 单向分层块的管辖面');
   assert.deepEqual(createConfig({ root: repoRoot })[5].rules['atb/no-undeclared-dependencies-imports'][1],
     { testDir: 'scripts/tests', buildToolDir: '' }, 'buildToolDir 缺省为空（不启用）');
+});
+
+/** 场景：原生对照登记经配置工厂传递，只有登记文件允许原生进程，其他入口约束照常执行。
+ * 例外与黑名单是两个独立参数——只传例外不影响工厂缺省黑名单。 */
+test('valid：原生对照登记经工厂生效且不扩散到其他文件', async () => {
+  const eslint = f_eslint({
+    exceptionFilesAllowModules: [{ file: 'export/native-reference.test.mjs', modules: ['node:child_process'], reason: '独立进程验证原生退出行为' }],
+  });
+  const code = "import plugin from 'atb-eslint-plugin'; import { spawn } from 'node:child_process'; console.log(plugin.rules); spawn(process.execPath, ['-e', '']);\n";
+  const [allowed] = await eslint.lintText(code, { filePath: 'scripts/tests/export/native-reference.test.mjs' });
+  assert.deepEqual(allowed.messages, [], '登记文件应允许原生对照进程');
+  const [extraModule] = await eslint.lintText(code + "import http from 'node:http'; console.log(http);\n", { filePath: 'scripts/tests/export/native-reference.test.mjs' });
+  assert.ok(extraModule.messages.some(message => message.messageId === 'deniedModule'), '同文件未登记的 http 仍应被禁止');
+  const [denied] = await eslint.lintText(code, { filePath: 'scripts/tests/export/other.test.mjs' });
+  assert.ok(denied.messages.some(message => message.messageId === 'spawnInExportPartition'), '其他文件仍须遵守进程分区限制');
 });
 
 /** 场景：真实 ESLint 以产出配置执行——具名导入按禁令意图放行。 */
@@ -263,14 +314,14 @@ test('valid：真实 ESLint 忽略样本豁免', async () => {
   }
 });
 
-/** 场景：调用方 ignores 在真实 ESLint 下真实豁免，内置管辖面不受影响。 */
-test('valid：真实 ESLint 调用方 ignores 豁免', async () => {
-  const eslint = f_eslint({ ignores: ['playground/**'] });
+/** 场景：内置忽略范围外的目录仍由真实 ESLint 检查。 */
+test('valid：真实 ESLint 检查 playground 目录', async () => {
+  const eslint = f_eslint();
   const offending = "import * as util from 'node:util';\nutil.format('x');\n";
-  const results = await eslint.lintText(offending, { filePath: 'playground/demo.js', warnIgnored: false });
-  assert.deepEqual(results, [], '追加忽略路径应被真实豁免');
-  const [result] = await eslint.lintText(offending, { filePath: 'src/app.js' });
-  assert.equal(result.messages.length, 1, '内置管辖面不受调用方 ignores 影响');
+  for (const filePath of ['playground/demo.js', 'src/app.js']) {
+    const [result] = await eslint.lintText(offending, { filePath });
+    assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax'), `${filePath} 应保持在管辖范围内`);
+  }
 });
 
 /** 场景：depsDir 覆盖在真实 ESLint 下真实豁免新依赖目录。 */
@@ -442,6 +493,5 @@ test('invalid：生产目录空 catch 命中', async () => {
 test('invalid：测试目录空 catch 同受管辖', async () => {
   const eslint = f_eslint();
   const [result] = await eslint.lintText('try {\n  run();\n} catch {}\n', { filePath: 'scripts/tests/a.mjs' });
-  assert.equal(result.messages.length, 1, '测试目录空 catch 应命中一条');
-  assert.equal(result.messages[0].ruleId, 'atb/no-silent-catch', '命中规则应为 atb/no-silent-catch');
+  assert.deepEqual(result.messages.map(message => message.ruleId).sort(), ['atb/no-bad-test-patterns', 'atb/no-silent-catch'], '测试目录空 catch 应同时受基础吞错与测试质量检查');
 });

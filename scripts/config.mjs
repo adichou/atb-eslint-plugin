@@ -10,11 +10,11 @@
 //   不受依赖循环检查约束；
 // - 全局忽略八层（内置于产出，不可配置）：depsDir、点号开头目录（隐藏目录及点号文件）、
 //   temp/tmp 目录、coverage/output 产物目录、*.min.js 压缩文件、image 资产目录、
-//   agent-team-board 看板数据目录（生态约定），之上叠加调用方 ignores；
+//   agent-team-board 看板数据目录（生态约定），不接受调用方追加；
 // - no-unmanaged-js 在本模型下恒真（管辖面即 root 全域，不存在白名单外文件），工厂不再接线；
 //   规则保留导出，供手动白名单式布局使用。
-// 内置基线 1/2/3、依赖三级链、死代码三件（死导出/文件私有死绑定/未使用依赖——后者随
-// packageJson.parser 接入）、访问级别分级与越级访问默认启用，其余规则块默认【停用】——按需逐个启用（去掉行首注释即接入）；块内管辖文件与选项内聚，
+// 默认启用基础质量、依赖与访问级别、入口、测试装配、测试质量和黑盒边界；清单规则随
+// packageJson.parser 接入。块内管辖文件与选项内聚，
 // 规则 ID 全局唯一，块间无覆盖语义。本模块属包的公共导出面（经 'atb-eslint-plugin/config.mjs'
 // 导入）：只依赖本包 plugin 与 Node 内置模块，不携带任何项目专属依赖与参数缺省——JSON
 // parser（如 eslint-plugin-package-json，调用方自备依赖）与本地来源白名单等项目事实由
@@ -26,18 +26,26 @@
 // - depsDir（缺省 'node_modules'）：依赖目录——全局忽略第一层。
 // - buildToolDir（缺省 ''）：构建工具目录——构建期/开发期辅助支撑代码的角色目录，devDependencies
 //   对它开放（依赖三级链块同名桥接）；未声明时不桥接。
-// - ignores（缺省 []）：在内置忽略之上追加的全局忽略。
-// - plugins（缺省 {}）：调用方额外插件注册——测试文件内联 eslint-disable 引用的插件、
-//   调用方自有规则块所需的插件在此登记；注册 playwright 即接线其三件套守卫（见下）。
 // - packageJson（缺省 {}）：package.json 面规则接线——传 parser（调用方自备依赖，如
 //   eslint-plugin-package-json）即启用清单面三件（未使用运行时依赖、入口面指向核验、
 //   dist-tag 禁令）；本地来源（file:/link:）不检——开发分支联调形态，main 分支守护归交付流程。
 // - packageJsonPath（缺省 'package.json'）：package.json 面规则的文件目标（相对 root）。
-// - uiTest（缺省 null 不传）：UI 分区接线（测试三分区模型）——{ enabled（缺省 true）, startup }
-//   启动命令为「入口文件 + 参数」词序列，入口文件必须在 package.json bin 声明块中声明。
-// 其余布局与纪律选项（badTestExceptionFiles / badTestOptions / unmockedExceptionFiles /
-// unmockedOptions）随对应规则块启用逐项回归，
-// 各注释块内标注了该块所需的选项。
+// - hooksDir（缺省 ''，不启用）：AI Agent 的 hook JSON 目录（相对 root，递归扫描）。命令文件
+//   加入 bin 测试入口，JSON 配置加入 no-missing-config-tests 的读取与字段断言守护。
+// - uiTest（缺省 null 不传）：UI 分区接线——{ enabled（缺省 true）, startup, index（缺省 /） }
+//   启动命令为「入口文件 + 参数」词序列，入口文件须在 bin 中声明；UI 用例还须导航到
+//   http://127.0.0.1:{port}/{index}，端口可动态，首页 index 缺省 /。
+// - deniedModules（缺省环境模块组）：测试环境模块黑名单（no-modules-import-in-test）——testDir
+//   内禁止导入的模块清单；归一化匹配（fs ≡ node:fs）且子路径连带（node:fs 拦 node:fs/promises），
+//   传入即整组覆盖。环境组属生态通用纪律而非项目专属事实，故入工厂缺省。
+// - exceptionFilesAllowModules（缺省 []）：测试原生模块文件例外登记 [{ file, modules, reason }]——
+//   file 是相对 testDir 的精确文件（禁止越界与 glob），仅放行所列模块及子路径，理由必填；
+//   与黑名单是两个独立参数（极性不混叠）：本参数只做「按文件放行」。明确授权 node:child_process
+//   的 export 测试还可使用原生对照进程，不豁免本包命令分区或公开导入要求。
+// - packageJsonPath 守护同名桥接：配置测试守护（no-missing-config-tests）的守护对象为固定
+//   双配置——根配置 eslint.config.mjs（家族内置常量）与 packageJsonPath 指向的清单（缺省
+//   'package.json'），并追加 hooksDir 下的 JSON；不设自由守护清单入参。守护测试按约定命名（package.test.mjs /
+//   eslint.config.test.mjs）在 testDir 内定位，须真实读取并断言关键字段。
 import path from 'node:path';
 import atbRules from './plugin.mjs';
 
@@ -50,19 +58,23 @@ export function createConfig({
   libDir = 'scripts/lib',
   depsDir = 'node_modules',
   buildToolDir = '',
-  ignores = [],
-  plugins = {},
   packageJson = {},
   uiTest = null,
   packageJsonPath = 'package.json',
+  hooksDir = '',
+  deniedModules = ['node:fs', 'node:http', 'node:https', 'node:child_process', 'node:process'],
+  exceptionFilesAllowModules = [],
+  ...unsupportedOptions
 } = {}) {
   if (!root || !path.isAbsolute(root)) {
     throw new Error('createConfig 需要 root 为仓库根绝对路径：布局目录与各规则 scanPath 均相对它解析');
   }
+  const unsupported = Object.keys(unsupportedOptions);
+  if (unsupported.length) throw new TypeError(`createConfig 不支持配置参数：${unsupported.join(', ')}`);
   const jsLanguage = { ecmaVersion: 'latest' }; // 解析面不锁 sourceType：按扩展名与清单 type 推断（.mjs=module、.cjs=commonjs、.js 按最近 package.json）
   const jsGlobs = ['**/*.js', '**/*.mjs', '**/*.cjs'];
   return [
-  // ---------- 全局忽略：八层内置（依赖 / 隐藏目录 / 临时目录 / 产物 / 资产 / 看板数据）+ 调用方追加 ----------
+  // -- 全局忽略：八层内置（依赖 / 隐藏目录 / 临时目录 / 产物 / 资产 / 看板数据） -----
   { ignores: [
       `${depsDir}/**`, // dependency 角色：第三方代码不参与任何检查
       '**/.*', '**/.*/**', // 点号开头目录（隐藏目录）及内容，顺带覆盖点号文件
@@ -70,15 +82,11 @@ export function createConfig({
       '**/coverage/**', '**/output/**', // 构建 / 报告产物目录
       '**/*.min.js', // 压缩产物文件
       'image/**', 'agent-team-board/**', // 资产目录与看板数据目录（生态约定）
-      ...ignores,
   ] },
-  // ---------- 插件注册：plugins 对整个配置数组生效（atb + 调用方追加），规则块不再重复声明 ----------
-  { plugins: { atb: atbRules, ...plugins } },
+  // ---------- 插件注册：内置 atb 对整个配置数组生效，规则块不再重复声明 ----------
+  { plugins: { atb: atbRules } },
 
-  // ======== 内置基线 1/2/3 默认启用；其余规则块默认【停用】：按需逐个启用（去掉行首注释即接入） ========
-
-  
-  // ---------- 通配符导入禁令（按实际使用的公共导出写具名导入）——受管全域 ----------
+  // ---------- 禁止通配符导入（按实际使用的公共导出写具名导入）-----
   {
     files: jsGlobs,
     languageOptions: { ...jsLanguage },
@@ -89,7 +97,7 @@ export function createConfig({
       }],
     },
   },
-  
+
   // ---- 禁止不安全的 finally 语句，例如 finally中直接 return 吞返回值 ----------
   {
     files: jsGlobs,
@@ -98,7 +106,7 @@ export function createConfig({
       'no-unsafe-finally': 'error',
     },
   },
-  
+
   // ---------- 禁止静默捕获异常不处理 ----------
   {
     files: jsGlobs,
@@ -143,6 +151,7 @@ export function createConfig({
       'atb/no-loose-dependency-specs': 'error',
     },
   }] : []),
+
   // ----- 禁止错误的访问级别和注释：非导出方法必须 f_，测试文件导出面必须 t_  --------
   {
     files: jsGlobs,
@@ -151,7 +160,7 @@ export function createConfig({
       'atb/no-wrong-access-level': ['error', { testDir }],
     },
   },
-  
+
   // ----禁止越级访问------
   // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）；testDir 与分级块
   // 同名透传。
@@ -193,48 +202,64 @@ export function createConfig({
       'atb/no-import-cycles': 'error',
     },
   },
-  
-  // ---- 测试三分区入口模型：测试文件必须归入 bin/export/ui 分区，各分区绑定入口纪律 ----
-  // bin：驱动目标 ∈ package.json bin 声明；export：import ∈ exports/main 声明面；
+
+  // -- 禁止不从声明的入口进行测试：bin/export/ui/config 分别绑定命令、公开 API、页面和配置证据 ----
+  // bin：驱动目标 ∈ package.json bin 或 hooksDir 命令声明；export：import ∈ exports/main 声明面；
   // ui（按 uiTest 启用）：驱动匹配 uiTest.startup 命令（入口文件 ∈ bin）。testDir 同名桥接；
-  // uiTest 由调用方传入（{ enabled, startup }，enabled 缺省 true）。
+  // uiTest 由调用方传入（{ enabled, startup, index }，enabled 缺省 true）。
   {
     files: f_jsFilesUnder(testDir),
     languageOptions: { ...jsLanguage },
     rules: {
-      'atb/no-undeclared-entry-in-test': ['error', { testDir, ...(uiTest ? { uiTest } : {}) }],
+      'atb/no-undeclared-entry-in-test': ['error', { testDir, ...(packageJsonPath !== 'package.json' ? { packageJsonPath } : {}), ...(hooksDir ? { hooksDir } : {}), ...(uiTest ? { uiTest } : {}), ...(exceptionFilesAllowModules.length ? { exceptionFilesAllowModules } : {}) }],
     },
   },
-  // ---------- playwright 守卫三件套：调用方注册 playwright 插件时接线（异步等待/固定睡眠/force 选项） ----------
-  // ...(plugins.playwright ? [{
-  //   files: f_jsFilesUnder(testDir),
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'playwright/missing-playwright-await': ['error', { includePageLocatorMethods: true }],
-  //     'playwright/no-wait-for-timeout': 'error',
-  //     'playwright/no-force-option': 'error',
-  //   },
-  // }] : []),
-
-
-
-  // ---------- 测试坏写法三合一（质量模式 + SC 注释归属 + 页面交互真实性） ----------
-  // {
-  //   files: f_jsFilesUnder(testDir),
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'atb/no-bad-test-patterns': ['error', { scanPath: root, exceptionFiles: badTestExceptionFiles, ...badTestOptions }],
-  //   },
-  // },
-
-  // ---------- litenvi 门面装配纪律（t_mock/t_install 装配与 t_unmock 复位配对） ----------
-  // {
-  //   files: f_jsFilesUnder(testDir),
-  //   languageOptions: { ...jsLanguage },
-  //   rules: {
-  //     'atb/no-unmocked-litenvi-in-test': ['error', { scanPath: testRoot, exceptionFiles: unmockedExceptionFiles, ...unmockedOptions }],
-  //   },
-  // },
+  // ---- 禁止测试环境模块导入黑名单：测试代码不得直接导入 node:fs/http/child_process 等环境模块 ----
+  // 内存世界纪律的导入面闭环：no-unmocked-litenvi-in-test 约束走了 lite 门面的装配，本规则拦住
+  // 绕过门面的直接导入。黑名单 deniedModules（缺省环境组）与文件例外 exceptionFilesAllowModules
+  // 是两个独立参数——前者全局禁止、后者按文件放行，极性不混叠；testDir 同名桥接；归一化匹配
+  //（fs ≡ node:fs）与子路径连带（node:fs 拦 node:fs/promises）。
+  {
+    files: f_jsFilesUnder(testDir),
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-modules-import-in-test': ['error', { testDir, deniedModules, exceptionFilesAllowModules }],
+    },
+  },
+  // ---- 禁止配置文件无测试：关键配置文件必须有「真实读取 + 关键字段断言」的守护测试 ----
+  // 锚点为根配置 eslint.config.mjs（家族内置常量，无需 JSON parser——挂在可选 parser 上的
+  // 规则在未接线时静默失效，违背 fail-loud）：自锚定包根，守护对象为固定双配置——根配置与
+  // packageJsonPath 清单（同名桥接，缺省 package.json），另追加 hooksDir JSON。守护测试按约定命名（package.test.mjs
+  // / eslint.config.test.mjs）在 testDir 内递归定位，且须静态可解地真实读取该配置（import
+  // 说明符 / new URL(import.meta.url) / path.join 构造）并断言关键字段（node:assert 绑定归因）
+  // ——配置是行为面，改动须经测试覆盖。
+  {
+    files: ['eslint.config.mjs'],
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-missing-config-tests': ['error', { testDir, packageJsonPath, ...(hooksDir ? { hooksDir } : {}) }],
+    },
+  },
+  // -- 禁止 litenvi 在测试用例中不 mock（t_mock/t_install 装配与 t_unmock 复位配对） ----------
+  {
+    files: f_jsFilesUnder(testDir),
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-unmocked-litenvi-in-test': 'error',
+    },
+  },
+  // ---------- 模块与黑盒边界：不提供文件例外，沿已声明布局检查 ----------
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: { 'atb/no-test-boundary-violations': ['error', { testDir, libDir, ...(hooksDir ? { hooksDir } : {}) }] },
+  },
+  // ---------- 测试质量：由 files 统一决定范围，不提供文件例外 ----------
+  {
+    files: f_jsFilesUnder(testDir),
+    languageOptions: { ...jsLanguage },
+    rules: { 'atb/no-bad-test-patterns': 'error' },
+  },
 
 
   ];

@@ -1,16 +1,17 @@
 // atb/no-unmocked-litenvi-in-test — litenvi 门面 mock 装配纪律（litenvi 内存世界铁律的静态承载）。
-// 受检范围即 scanPath（配置为测试目录，目录外文件不受检）内的每个 node:test 用例：回调内
-// 直接使用需开关的 litenvi 门面（默认导入对象或具名对象绑定，如 liteFs.writeFileSync /
+// 本规则不设路径门：受检面由 ESLint files 配置决定（flat config 的 files 即管辖边界，配置基准
+// 路径之外的文件本就不会路由进来，同 no-wrong-access-level 口径）——路由进来的每个 node:test
+// 用例：回调内直接使用需开关的 litenvi 门面（默认导入对象或具名对象绑定，如 liteFs.writeFileSync /
 // liteChildProcess.spawn / liteProcess.cwd）时，回调作用域或其调用的 helper 链（同文件函数
 // 与相对导入 helper 的导出函数，递归两层）内须存在该门面的 t_mock/t_install 开关调用与
-// t_unmock 配对——缺任一即报错，防止测试未装配内存世界而真实启进程、触网或落盘。无开关
-// 模块（lite-browser/lite-cmd-mgr/lite-cmd-node/lite-cmd-os）与 exceptionFiles 登记文件豁免
-//（exceptionFiles 相对 scanPath）。静态边界（如实声明）：不判调用顺序（先使用后装配不报）、
+// t_unmock 配对——缺任一即报错，防止测试未装配内存世界而真实启进程、触网或落盘。装配覆盖面
+// 另计入两处底盘：模块体顶层装配（import 即 mock）与 node:test 生命周期钩子（beforeEach/
+// afterEach/before/after 回调内的共享 helper 装配）。无开关模块（lite-browser/lite-cmd-mgr/
+// lite-cmd-node/lite-cmd-os）豁免。静态边界（如实声明）：不判调用顺序（先使用后装配不报）、
 // 不追动态 import 与运行时传值、helper 内部自身的门面使用不在本规则判定（只看用例回调的
 // 直接使用面）；清理是否真实生效由运行时与评审验证。诊断按门面模块 + 用例名 + 所需开关定位。
 import path from 'node:path';
 import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
-import { i_minimatch } from '../lib/attributions.mjs';
 
 // 门面 → 所需开关（t_mock 或 t_install）；未列出的 lite 模块视为无开关、豁免
 const DEFAULT_SWITCHES = {
@@ -39,11 +40,9 @@ export default {
  schema: [{
  type: 'object',
  properties: {
- scanPath: { type: 'string' },
  testRunnerSource: { type: 'string' },
  switches: { type: 'object', additionalProperties: { type: 'string', enum: ['t_mock', 't_install'] } },
  helperDepth: { type: 'integer', minimum: 1, maximum: 5 },
- exceptionFiles: { type: 'array', items: { type: 'string' } },
  },
  additionalProperties: false,
  }],
@@ -55,18 +54,10 @@ export default {
 
  create(context) {
  const options = context.options[0] || {};
- const scanPath = path.resolve(options.scanPath || process.cwd());
  const runnerSource = options.testRunnerSource || 'node:test';
  const switches = { ...DEFAULT_SWITCHES, ...(options.switches || {}) };
  const helperDepth = options.helperDepth || 6;
- const exceptions = options.exceptionFiles || [];
- const filename = path.resolve(context.filename || context.getFilename());
- const relativeFile = path.relative(scanPath, filename).split(path.sep).join('/');
- // scanPath 即受检范围（配置为测试目录）：目录外文件与 exceptionFiles 登记文件不受检。
- if (relativeFile.startsWith('../')
- || exceptions.some((pattern) => i_minimatch(relativeFile, pattern))) {
- return {};
- }
+ // 不设路径门与豁免清单：受检面由 ESLint files 配置决定，files 外文件本就不会路由进来。
  const sourceCode = context.sourceCode;
  // import 绑定位于模块子作用域而非 globalScope.variables，遍历全部作用域收集
  const allVariables = sourceCode.scopeManager.scopes.flatMap((s) => s.variables);
@@ -275,6 +266,15 @@ export default {
  };
  f_visit(node.body);
  const coverage = f_coverage(node);
+ // 钩子装配底盘：beforeEach/afterEach/before/after 回调（node:test 生命周期钩子）先于/后于
+ // 每个用例执行——共享 helper（如 t_createFixture）内的装配与复位经由钩子生效时，计入全文件
+ // 用例的覆盖面（与模块体底盘同语义；只并入 on/off，不并入用例自身的 switchCalled）。
+ for (const [module, hookEntry] of f_hookCoverage()) {
+ const entry = coverage.get(module) || { on: false, off: false };
+ entry.on = entry.on || hookEntry.on;
+ entry.off = entry.off || hookEntry.off;
+ coverage.set(module, entry);
+ }
  for (const module of used) {
  const kind = switches[module];
  const entry = coverage.get(module);
@@ -288,9 +288,44 @@ export default {
  }
  }
 
+ // 私有：钩子装配底盘（按文件缓存）——扫描 AST 中 node:test 生命周期钩子注册
+ //（beforeEach/afterEach/before/after），其回调经 f_coverage 计算装配覆盖面后并集。
+ let hookCoverageCache = null;
+ function f_hookCoverage() {
+ if (hookCoverageCache) return hookCoverageCache;
+ const hookNames = new Set(['before', 'after', 'beforeEach', 'afterEach']);
+ const merged = new Map();
+ const f_walk = (current) => {
+ if (!current || typeof current.type !== 'string') return;
+ if (current.type === 'CallExpression' && current.callee.type === 'Identifier'
+ && hookNames.has(current.callee.name) && testNames.has(current.callee.name)) {
+ const callback = current.arguments.find((argument) => argument
+ && ['FunctionExpression', 'ArrowFunctionExpression'].includes(argument.type));
+ if (callback) {
+ for (const [module, entry] of f_coverage(callback)) {
+ const current = merged.get(module) || { on: false, off: false };
+ current.on = current.on || entry.on;
+ current.off = current.off || entry.off;
+ merged.set(module, current);
+ }
+ }
+ }
+ for (const key of Object.keys(current)) {
+ if (key === 'parent' || key === 'tokens' || key === 'comments' || key === 'loc' || key === 'range') continue;
+ const value = current[key];
+ if (Array.isArray(value)) value.forEach(f_walk);
+ else if (value && typeof value.type === 'string') f_walk(value);
+ }
+ };
+ f_walk(sourceCode.ast);
+ hookCoverageCache = merged;
+ return merged;
+ }
+
  return {
  'CallExpression'(node) {
  if (node.callee.type !== 'Identifier' || !testNames.has(node.callee.name)) return;
+ if (['before', 'after', 'beforeEach', 'afterEach'].includes(node.callee.name)) return;
  const callback = node.arguments.find((argument) => argument
  && ['FunctionExpression', 'ArrowFunctionExpression'].includes(argument.type));
  if (!callback) return;
