@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "eslint-plugin-package-json": "0.91.2",
-    "litenvi-node": "file:../litenvi-node"
+    "litenvi-node": "0.1.0"
   },
   "devDependencies": {
     "eslint": "9.39.4",
