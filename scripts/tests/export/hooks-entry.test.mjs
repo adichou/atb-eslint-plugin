@@ -7,7 +7,7 @@ import { Linter } from 'eslint';
 import entryRule from 'atb-eslint-plugin/rules/no-undeclared-entry-in-test.mjs';
 import configRule from 'atb-eslint-plugin/rules/no-missing-config-tests.mjs';
 import { createConfig } from 'atb-eslint-plugin/config.mjs';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 
 const f_PROCESS = JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'process', command: 'node', args: ['${ZCODE_PLUGIN_ROOT}/scripts/guard.mjs', 'file'] }] }] } });
 const f_COMMAND = JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node "$PLUGIN_ROOT/scripts/guard.mjs" bash' }] }] } });
@@ -29,7 +29,7 @@ export function t_agent() {
 
 // 私有：执行实际规则；源码字符串作为测试输入，不启动其中的子进程。
 function f_verify({ files = {}, code = '', partition = 'bin', hooksDir = 'hooks', config = false }) {
-  const root = t_createFixture({
+  const root = i_createFixture({
     'package.json': '{"name":"fixture","bin":{"cli":"scripts/cli.mjs"}}',
     'eslint.config.mjs': 'export default [];',
     'scripts/cli.mjs': '',
@@ -93,7 +93,7 @@ for (const scenario of f_CASES) {
 
 /** 场景：目录配置经公共工厂同时传到入口检查与配置守护，不改变默认未启用的行为。 */
 test('hooksDir 经工厂传给两个规则', () => {
-  const config = createConfig({ root: '/project', hooksDir: 'agent-hooks' });
+  const config = createConfig({ hooksDir: 'agent-hooks' });
   for (const id of ['no-undeclared-entry-in-test', 'no-missing-config-tests']) {
     const block = config.find(item => item.rules?.[`atb/${id}`]);
     assert.equal(block.rules[`atb/${id}`][1].hooksDir, 'agent-hooks', `${id} 应收到自定义目录`);

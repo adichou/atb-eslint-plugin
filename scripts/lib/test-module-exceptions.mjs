@@ -1,24 +1,22 @@
-// 测试原生模块例外的共享契约：精确文件、明确模块与可审查的用途说明。
-// 与黑名单（deniedModules）是两个独立参数——本契约只做「按文件放行」，极性不混叠。
+// 原生模块身份与内置 litenvi 底层边界，模块规则和测试入口检查共用。
 import path from 'node:path';
 import { builtinModules } from 'node:module';
+import fs from 'litenvi-node/lite-fs.mjs';
+import { i_projectRootOf, i_repoRelative } from './attributions.mjs';
 
 const f_BUILTINS = new Set(builtinModules);
-
-// 内部：导入黑名单与测试入口规则共用同一例外结构。
-export const i_testModuleExceptionsSchema = {
-  type: 'array',
-  items: {
-    type: 'object',
-    properties: {
-      file: { type: 'string', minLength: 1 },
-      modules: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string', pattern: '\\S' } },
-      reason: { type: 'string', pattern: '\\S' },
-    },
-    required: ['file', 'modules', 'reason'],
-    additionalProperties: false,
-  },
-};
+// 仅内置 litenvi-node 真实门面实现及原生对照，不向消费项目开放配置入口。
+const f_LITENVI = new Map([
+  ['scripts/lite-fs.mjs', ['node:fs']],
+  ['scripts/lite-http.mjs', ['node:http', 'node:https']],
+  ['scripts/lite-server.mjs', ['node:http']],
+  ['scripts/lite-os.mjs', ['node:os']],
+  ['scripts/lite-process.mjs', ['node:os']],
+  ['scripts/lite-child_process.mjs', ['node:child_process', 'node:timers', 'node:os']],
+  ['scripts/lite-cmd-node.mjs', ['node:worker_threads', 'node:timers', 'node:child_process', 'node:http', 'node:https', 'node:net', 'node:tls']],
+  ['scripts/tests/export/lite-os.test.mjs', ['node:os']],
+  ['scripts/tests/export/native-reference.test.mjs', ['node:child_process', 'node:fs', 'node:http', 'node:net', 'node:os']],
+]);
 
 // 内部：裸内置名与 node 前缀采用同一身份，保留包名与模块子路径。
 export function i_normalizeTestModule(specifier) {
@@ -27,20 +25,18 @@ export function i_normalizeTestModule(specifier) {
   return !specifier.startsWith('@') && f_BUILTINS.has(head) ? `node:${specifier}` : specifier;
 }
 
-// 内部：只接受测试目录内的具体代码文件，不允许绝对路径、越界或 glob。
-export function i_validModuleExceptionFile(testDir, file) {
-  const relative = path.relative(testDir, path.resolve(testDir, file));
-  return !path.isAbsolute(file) && !/[\\*?\[\]{}!:()]/.test(file)
-    && relative !== '..' && !relative.startsWith(`..${path.sep}`)
-    && !path.isAbsolute(relative) && /\.[cm]?js$/.test(relative);
-}
-
-// 内部：只授权同一文件中明确列出的模块及子路径，不扩大到其他环境能力。
-export function i_moduleExceptionAllows(entries, testDir, filename, specifier) {
+// 内部：按真实文件所属包校验身份，同名文件、嵌套普通包和越界软链接不能借用权限。
+export function i_builtinModuleAllows(filename, specifier) {
+  const root = i_projectRootOf(filename);
+  if (!root) return false;
+  const relative = i_repoRelative(filename, root);
+  const allowed = f_LITENVI.get(relative);
+  if (!allowed) return false;
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); }
+  catch { return false; }
+  if (manifest?.name !== 'litenvi-node' || manifest.type !== 'module'
+    || manifest.exports?.['./lite-*.mjs'] !== './scripts/lite-*.mjs') return false;
   const target = i_normalizeTestModule(specifier);
-  return entries.some(item => path.resolve(testDir, item.file) === filename
-    && item.modules.some(module => {
-      const allowed = i_normalizeTestModule(module);
-      return target === allowed || target.startsWith(`${allowed}/`);
-    }));
+  return allowed.some(module => target === module || target.startsWith(`${module}/`));
 }

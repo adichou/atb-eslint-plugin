@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
 import { Linter } from 'eslint';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 import packageJsonPlugin from 'eslint-plugin-package-json';
 import wrongExportsInPackage from 'atb-eslint-plugin/rules/no-wrong-exports-in-package.mjs';
 
@@ -27,7 +27,7 @@ async function f_lint(dir, options = {}) {
 
 /** 场景：main/bin/exports 全部指向生产文件——放行。 */
 test('valid：入口面指向生产文件放行', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
       main: 'src/index.mjs',
@@ -45,7 +45,7 @@ test('valid：入口面指向生产文件放行', async () => {
 
 /** 场景：manifest 无入口声明（纯库/应用无面）——放行。 */
 test('valid：无入口声明放行', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture' }),
     'src/a.mjs': 'export const x = 1;\n',
   });
@@ -56,7 +56,7 @@ test('valid：无入口声明放行', async () => {
 
 /** 场景：main 与 bin 指向测试文件（缺省 testDir='scripts/tests'）——各报一条。 */
 test('invalid：main 与 bin 指向测试文件报告', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
       main: 'scripts/tests/index.test.mjs',
@@ -79,10 +79,10 @@ test('invalid：main 与 bin 指向测试文件报告', async () => {
 
 /** 场景：exports 目标指向测试文件与 buildToolDir 文件——各报一条。 */
 test('invalid：exports 指向测试与构建工具文件报告', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
-      exports: { './test': './scripts/tests/helper.mjs', './build': './tools/build.mjs' },
+      exports: { './test': './scripts/tests/helper.test.mjs', './build': './tools/build.mjs' },
     }),
     'scripts/tests/helper.mjs': 'export const t_h = 1;\n',
     'tools/build.mjs': 'export const t_b = 1;\n',
@@ -97,7 +97,7 @@ test('invalid：exports 指向测试与构建工具文件报告', async () => {
 
 /** 场景：exports 通配模式可命中测试目录（探测文件匹配）——按模式报告。 */
 test('invalid：exports 通配模式命中测试目录报告', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', exports: { './*': './scripts/*' } }),
     'scripts/lib/a.mjs': 'export const x = 1;\n',
   });
@@ -111,7 +111,7 @@ test('invalid：exports 通配模式命中测试目录报告', async () => {
 
 /** 场景：自定义 testDir 后缺省目录不再命中——测试身份随 testDir 覆盖。 */
 test('valid：testDir 覆盖后缺省目录放行', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', main: 'scripts/tests/legacy.mjs' }),
     'scripts/tests/legacy.mjs': 'export const x = 1;\n',
   });
@@ -122,7 +122,7 @@ test('valid：testDir 覆盖后缺省目录放行', async () => {
 
 /** 场景：前提约束 fail-loud——绝对路径 testDir 在 create 阶段抛错。 */
 test('invalid：绝对路径 testDir 抛错', async () => {
-  const dir = t_createFixture({ 'package.json': JSON.stringify({ name: 'fixture' }) });
+  const dir = i_createFixture({ 'package.json': JSON.stringify({ name: 'fixture' }) });
   try {
     await assert.rejects(
       () => f_lint(dir, { testDir: '/absolute/tests' }),

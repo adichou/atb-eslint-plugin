@@ -1,6 +1,6 @@
 // atb/no-silent-catch — 生产侧吞错检查。
 // 生产与工具代码的 catch 块为空或仅含注释时按吞错报错：错误须被处理、上抛、记录或交给
-// 显式断言/清理流程；测试分区的同型检查由 atb/no-bad-test-patterns 承担，两分区口径一致。
+// 显式断言/清理流程；测试分区的同型检查由 atb/no-bad-patterns-in-test 承担，两分区口径一致。
 // 合法形态不误报：catch 内有语句（含 finally 清理、rethrow、日志、返回错误值）均放行。
 export default {
  meta: {

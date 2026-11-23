@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'litenvi-node/lite-fs.mjs';
 import { Linter } from 'eslint';
 import rule from 'atb-eslint-plugin/rules/no-import-cycles.mjs';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 const f_CASES = [
   ['相对导入成环', "import './a.mjs';", ['dependencyCycle']],
   ['包名自引用成环', "export { value } from 'fixture/a';", ['dependencyCycle']],
@@ -17,7 +17,7 @@ const f_CASES = [
 for (const [name, other, expected] of f_CASES) {
   /** 场景：依赖边来自真实导入 API，字符串或注释不能伪造成环。 */
   test(name, () => {
-    const root = t_createFixture({ 'package.json': JSON.stringify({ name: 'fixture', exports: { './a': './src/a.mjs' } }), 'src/b.mjs': other });
+    const root = i_createFixture({ 'package.json': JSON.stringify({ name: 'fixture', exports: { './a': './src/a.mjs' } }), 'src/b.mjs': other });
     try {
       const config = [{ files: ['**/*.mjs'], plugins: { atb: { rules: { cycles: rule } } }, rules: { 'atb/cycles': 'error' } }];
       const linter = new Linter({ cwd: root });

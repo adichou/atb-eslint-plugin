@@ -1,6 +1,6 @@
 // 使用官方 RuleTester 执行真实规则；受检代码直接传字符串，无需文件系统或命令模拟。
 // 规则自锚定项目根（受检文件向上找最近 package.json），用例以本仓真实清单判定三级链：
-// dependencies=litenvi-node、devDependencies=eslint/eslint-plugin-* 等；peer 级本仓未声明，
+// dependencies 含 litenvi-node 与 JSON parser 依赖，devDependencies 含 eslint/playwright 规则；peer 级本仓未声明，
 // 不构造磁盘夹具，留白不测（与「相对导入目标不必真实存在」的纯路径归因口径一致）。
 // 根配置 eslint.config.mjs 为规则内置识别的开发代码（固定路径不经参数）——devDependencies
 // 合法、未声明依赖照抓；规则不设 ignores，不支持任何形态的忽略。
@@ -38,7 +38,7 @@ tester.run('no-undeclared-dependencies-imports', undeclaredDeps, {
     {
       name: '根配置内置识别 devDependencies 放行',
       filename: rootConfigFile,
-      code: "import packageJsonPlugin from 'eslint-plugin-package-json';\n",
+      code: "import playwrightPlugin from 'eslint-plugin-playwright';\n",
     },
     // 场景：testDir 命中的文件引用 devDependencies 放行（缺省 testDir='scripts/tests'）。
     {

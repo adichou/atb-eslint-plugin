@@ -24,6 +24,6 @@ test('valid：清单关键字段在位', () => {
 
 /** 场景：exports 面真实可加载——自引用导入插件入口，守护规则注册面完整。 */
 test('valid：exports 面加载与规则注册', () => {
-  assert.ok(plugin.rules['no-modules-import-in-test'] !== undefined, '环境模块黑名单规则在注册面');
+  assert.ok(plugin.rules['no-blacklist-module-imports'] !== undefined, '环境模块黑名单规则在注册面');
   assert.ok(plugin.rules['no-missing-config-tests'] !== undefined, '本守护规则自身在注册面');
 });

@@ -27,7 +27,7 @@ const tester = new RuleTester({
   languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
 });
 
-/** 场景：f_ 分级（非导出方法须 f_、非导出绑定禁级别前缀）、测试文件导出面 t_ 要求与返回面相干。 */
+/** 场景：f_ 分级（非导出方法须 f_、非导出绑定禁级别前缀）、测试文件内部 i_ 与对外 t_ 要求与返回面相干。 */
 tester.run('no-wrong-access-level', wrongAccessLevel, {
   valid: [
     // 场景：入口面核验（增强）——对外导入面文件（manifest exports 目标）的公开导出放行。
@@ -43,17 +43,17 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     { name: '生产文件非导出函数 f_ 前缀放行', filename: prodFile, code: 'function f_run() {}\nconst f_helper = () => {};\n', options },
     // 场景：测试文件导出面放行 t_——函数、数据与函数值绑定三形态。
     {
-      name: '测试文件 t_ 导出放行',
+      name: '测试文件 i_ 导出放行',
       filename: testFile,
-      code: 'export function t_run() {}\nexport const t_data = 1;\nexport const t_case = () => {};\n',
+      code: 'export function i_run() {}\nexport const i_data = 1;\nexport const i_case = () => {};\n',
       options,
     },
     // 场景：测试文件名单导出以面名核验——本地 t_ 名与 t_ 面名一致即放行。
-    { name: '测试文件名单导出 t_ 面名放行', filename: testFile, code: 'function t_run() {}\nexport { t_run };\n', options },
+    { name: '测试文件名单导出 i_ 面名放行', filename: testFile, code: 'function i_run() {}\nexport { i_run };\n', options },
     // 场景：名单别名导出看面名（exported 名），面名为 t_ 即放行。
-    { name: '测试文件别名导出 t_ 面名放行', filename: testFile, code: 'function t_run() {}\nexport { t_run as t_case };\n', options },
+    { name: '测试文件别名导出 i_ 面名放行', filename: testFile, code: 'function i_run() {}\nexport { i_run as i_case };\n', options },
     // 场景：re-export（export-from）同样按面名核验，t_ 面名放行。
-    { name: '测试文件 re-export t_ 面名放行', filename: testFile, code: "export { t_thing } from '../dep.mjs';\n", options },
+    { name: '测试文件 re-export i_ 面名放行', filename: testFile, code: "export { i_thing } from '../dep.mjs';\n", options },
     // 场景：默认导出无名字面，不参与 t_ 要求（消费方自带名，前缀体系不适用）。
     { name: '测试文件默认导出不参与', filename: testFile, code: 'export default function run() {}\n', options },
     { name: '测试文件默认导出对象不参与', filename: testFile, code: 'export default {};\n', options },
@@ -63,14 +63,14 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     {
       name: '相对 testDir 按运行目录解析命中测试身份',
       filename: 'scripts/tests/relative.test.mjs',
-      code: 'export const t_ok = 1;\n',
+      code: 'export const i_ok = 1;\n',
       options: [{ testDir: 'scripts/tests' }],
     },
     // 场景：testDir 覆盖缺省——自定义目录识别测试身份，命中目录按测试导出面核验。
     {
       name: 'testDir 覆盖后自定义目录按测试身份放行',
       filename: path.join(repoRoot, 'test/helper.test.mjs'),
-      code: 'export function t_run() {}\n',
+      code: 'export function i_run() {}\n',
       options: [{ testDir: 'test' }],
     },
     // 场景：testDir 覆盖后缺省目录不再识别为测试——导出面回到生产口径（i_ 导出放行）。
@@ -160,9 +160,9 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     // 场景：块注释（* 前缀行）内的标注同样参与对账，一致放行。
     { name: '块注释标注一致放行', filename: prodFile, code: '/**\n * 私有：文件内工具\n */\nfunction f_util() {}\n', options },
     // 场景：t_ 工厂返回无前缀键随句柄放行——读法 B 对四种句柄级别（公开/i_/t_/f_）一致生效。
-    { name: 't_ 工厂返回无前缀键放行', filename: testFile, code: 'export function t_buildWorld() { return { probe() {} }; }\n', options },
+    { name: 'i_ 测试工厂返回无前缀键放行', filename: testFile, code: 'export function i_buildWorld() { return { probe() {} }; }\n', options },
     // 场景：测试文件 t_ 句柄挂 i_ 契约键放行——mock 豁免只看文件身份，不看句柄级别。
-    { name: '测试文件 t_ 句柄 i_ 契约键放行', filename: testFile, code: 'export function t_buildCmd() { return { i_runSync() {} }; }\n', options },
+    { name: '测试文件 i_ 句柄 i_ 契约键放行', filename: testFile, code: 'export function i_buildCmd() { return { i_runSync() {} }; }\n', options },
     // 场景：测试文件返回树显式 i_ 契约键——mock 实现生产协作接口的唯一合法拼写，放行。
     { name: '测试文件返回树 i_ 契约键放行', filename: testFile, code: 'const f_npmCmd = (status) => ({ i_runSync: () => ({ status }), i_run() {} });\n', options },
     { name: '测试文件命名工厂 i_ 契约键放行', filename: testFile, code: 'function f_makeCmd() { return { i_runSync() {} }; }\n', options },
@@ -211,14 +211,14 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
       output: null,
       errors: [{ messageId: 'testExportLevel', data: { name: 'api' }, type: 'Identifier' }],
     },
-    // 场景：i_ 导出同样不是 t_——测试文件导出面只放行 t_。
+    // 场景：包内测试 helper 误用未登记的对外 t_ 导出应报告。
     {
-      name: '测试文件 i_ 导出报告',
+      name: '测试文件未登记 t_ 导出报告',
       filename: testFile,
-      code: 'export const i_data = 1;\n',
+      code: 'export const t_data = 1;\n',
       options,
       output: null,
-      errors: [{ messageId: 'testExportLevel', data: { name: 'i_data' }, type: 'Identifier' }],
+      errors: [{ messageId: 'publicExportOffFace', data: { name: 't_data', kind: ' t_' }, type: 'Identifier' }],
     },
     // 场景：re-export 的无前缀面名同样报告。
     {

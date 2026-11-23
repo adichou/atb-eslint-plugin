@@ -1,18 +1,6 @@
-// atb/no-unused-exports — 导出但无消费方的死导出（按文件受众分类核面）。
-// 项目根自锚定：受检文件向上找最近 package.json 即所属包根——扫描范围与入口面 manifest 同源
-// 于它，monorepo 各包自查；不落在任何包内的文件不受检。无 scanPath 参数。
-// 分类判定（testDir 与 no-wrong-access-level 同名同语义，相对 ESLint 运行目录，绝对路径抛错）：
-// ① 测试文件：导出面只可能服务本仓测试（测试文件不产出对外接口），全部具名导出（公开/t_/
-//   i_）须本仓内被导入，未用即报；② bin 直驱入口：不走 import 加载器（外部 node 命令直接
-//   运行），任何导出的死活都不可判，整文件放过；③ 对外导入面（manifest main/exports 目标
-//   与根配置——消费方可能是外部仓库）：公开/t_ 导出的死活不可静态判定，不检；i_ 导出声明
-//   「包内协作」，本仓无人用即矛盾，照检；④ 其余内部文件：全部具名导出须本仓内被导入
-//  （npm scripts 以 node 直驱的脚本亦在此列——直驱脚本不该有导出，死导出照报）。
-// f_ 导出名不在本规则检面——出现在导出面的 f_ 由 no-out-of-level-access 的 filePrivateExport
-// 统一表态（死活另论，移交避免同面双报）。消费图（正则提取、跨行安全、进程级缓存）与导出面
-// AST 提取的口径见下；touched（命名空间/副作用/动态字面量/export * 消费）文件级保守豁免。
-// 静态边界（如实声明）：裸包名导入不建边；相对说明符按补扩展名与 /index.* 解析；非字面量动态
-// import 不算消费；CommonJS 导出面不检（本生态为 ESM）。
+// 死导出按实际受众检查：声明的 JS 导入入口允许公开/t_ 由包外消费，但 i_ 必须有包内消费者。
+// 未发布的模块（含测试 helper）检查全部具名导出；bin 直驱与整模块消费沿原有保守边界。
+// f_ 导出交由访问规则报告。消费图为静态文本扫描与进程级缓存，不执行模块。
 import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
 import path from 'node:path';
 import { i_entryFacesOf, i_minimatch, i_projectRootOf } from '../lib/attributions.mjs';
@@ -108,7 +96,7 @@ function f_buildGraph(projectRoot) {
 export default {
  meta: {
  type: 'problem',
- docs: { description: '导出但无消费方的死导出（按受众分类：测试文件全检、bin 直驱整放过、导入面只检 i_、内部文件全检；f_ 导出移交 no-out-of-level-access）' },
+ docs: { description: '导出但无消费方的死导出（按受众分类：bin 直驱整放过、声明导入面只检 i_、内部文件全检（含包内测试 helper）；f_ 导出移交 no-out-of-level-access）' },
  schema: [{
  type: 'object',
  properties: {
@@ -132,20 +120,16 @@ export default {
  const relative = path.relative(projectRoot, filename).split(path.sep).join('/');
  // 测试身份：testDir 与 no-wrong-access-level 同名同语义（前提约束：ESLint 运行目录必须在
  // 仓库根；绝对路径传入即抛）。
- const cwd = context.cwd || context.getCwd();
  const testDirInput = options.testDir || DEFAULT_TEST_DIR;
  if (path.isAbsolute(testDirInput)) {
  throw new Error(`testDir 必须是相对仓库根的相对路径（前提约束：ESLint 运行目录必须在仓库根），不接受绝对路径：${testDirInput}`);
  }
- const isTestFile = !path.relative(path.resolve(cwd, testDirInput), filename).split(path.sep).join('/').startsWith('../');
  const { consumers, touched } = f_buildGraph(projectRoot);
  const { importFaces, binFaces, patterns } = i_entryFacesOf(projectRoot);
  // ② bin 直驱入口整放过；touched（命名空间/副作用/动态字面量/export * 消费）文件级保守豁免。
  if (binFaces.has(filename) || touched.has(filename)) return {};
- // ③ 对外导入面（main/exports/根配置）：只检 i_；①测试文件优先于入口面判定（测试文件
- // 不产出对外接口，无论挂面与否全检）；④内部文件：检全部非 f_ 名。
- const onImportFace = !isTestFile
- && (importFaces.has(filename) || patterns.some((pattern) => i_minimatch(relative, pattern)));
+ // 声明导入面（含显式发布的测试辅助模块）只检包内 i_，其余内部文件全检。
+ const onImportFace = (importFaces.has(filename) || patterns.some((pattern) => i_minimatch(relative, pattern)));
  // 导出面自 AST 收集（声明形态、本地名单、re-export 面名、默认导出）；export * 使本文件成为
  // 聚合面，通配不可枚举——保守豁免本文件全部导出。
  const facesOfThisFile = [];

@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'litenvi-node/lite-fs.mjs';
 import { Linter } from 'eslint';
-import rule from 'atb-eslint-plugin/rules/no-test-boundary-violations.mjs';
-import { t_createFixture } from '../lint-fixture.mjs';
+import rule from 'atb-eslint-plugin/rules/no-boundary-violations-in-test.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 
 const f_CASES = [
   ['业务方法被 mock 替换', "import { mock } from 'node:test'; import api from '../../../src/api.mjs'; mock.method(api, 'save', () => 1);", ['businessReplacement']],
@@ -21,7 +21,7 @@ const f_CASES = [
   ['测试文件不能导入另一测试文件', "import '../other.test.mjs';", ['testFileDependency']],
   ['共享 helper 可以导入', "import { t_read } from '../helper.mjs'; t_read();", []],
   ['生产代码不能依赖测试准备', "import '../scripts/tests/helper.mjs';", ['productionDependsOnTests'], 'src/main.mjs'],
-  ['共享库不能反向依赖声明命令', "import '../cli.mjs';", ['reverseEntryDependency'], 'src/lib/store.mjs'],
+  ['内部库不能反向依赖声明命令', "import '../cli.mjs';", ['reverseEntryDependency'], 'src/lib/store.mjs'],
   ['公共账本不能改写', "import server from 'litenvi-node/lite-server.mjs'; const records = server.t_requests(); records[0].status = 200;", ['observationMutation']],
   ['观测字段读取允许', "import server from 'litenvi-node/lite-server.mjs'; console.log(server.t_requests()[0]?.status);", []],
   ['调用账本是独立快照，允许验证防御性复制', "import cp from 'litenvi-node/lite-child_process.mjs'; const snapshot = cp.t_calls(); snapshot.pop();", []],
@@ -35,13 +35,13 @@ const f_CASES = [
   ['环境变量修改必须恢复', "process.env.ATB_EXAMPLE = 'yes';", ['globalStateLeak']],
   ['finally 恢复环境变量', "const old = process.env.ATB_EXAMPLE; try { process.env.ATB_EXAMPLE = 'yes'; } finally { if (old === undefined) delete process.env.ATB_EXAMPLE; else process.env.ATB_EXAMPLE = old; }", []],
   ['影子 process 不误报', "const process = { env: {} }; process.env.ATB_EXAMPLE = 'yes';", []],
-  ['共享模块不能在加载时写盘', "import fs from 'litenvi-node/lite-fs.mjs'; fs.writeFileSync('/x', 'x');", ['moduleLoadSideEffect'], 'src/lib/store.mjs'],
+  ['内部库不能在加载时写盘', "import fs from 'litenvi-node/lite-fs.mjs'; fs.writeFileSync('/x', 'x');", ['moduleLoadSideEffect'], 'src/lib/store.mjs'],
   ['函数内的业务写盘允许', "import fs from 'litenvi-node/lite-fs.mjs'; export function save() { fs.writeFileSync('/x', 'x'); }", [], 'src/lib/store.mjs'],
 ];
 for (const [name, code, expected, relative = 'scripts/tests/export/sample.test.mjs'] of f_CASES) {
   /** 场景：按真实模块与可确认的清理位置检查边界，不凭对象变量名判断。 */
   test(name, () => {
-    const root = t_createFixture({
+    const root = i_createFixture({
       'package.json': JSON.stringify({ name: 'fixture', exports: { '.': './src/api.mjs' }, bin: { cli: './src/cli.mjs' } }),
       'src/api.mjs': 'export default { save() {} };', 'src/cli.mjs': '',
       'scripts/tests/other.test.mjs': '', 'scripts/tests/helper.mjs': 'export function t_read() {}',

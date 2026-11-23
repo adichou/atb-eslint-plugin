@@ -3,7 +3,7 @@ import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { Linter } from 'eslint';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 import entryRule from 'atb-eslint-plugin/rules/no-undeclared-entry-in-test.mjs';
 
 const f_DRIVE = "import cp from 'node:child_process'; cp.spawn('node', ['src/cli.mjs', 'serve']);";
@@ -11,15 +11,17 @@ const f_PAGE = "import { chromium } from 'playwright'; const browser = await chr
 const f_HELPER = "import cp from 'node:child_process'; export function t_start() { cp.spawn('node', ['src/cli.mjs', 'serve']); }";
 const f_PROCESS_MANIFEST = { name: 'litenvi-node', exports: { './lite-*.mjs': './src/lite-*.mjs' } };
 const f_PROCESS_FILES = { 'src/lite-child_process.mjs': 'export default {}; export function spawn() {}' };
-const f_REFERENCE = [{ file: 'export/sample.test.mjs', modules: ['node:child_process'], reason: '原生 Node 作为子进程行为的对照基准' }];
 const f_NATIVE_REFERENCE = "import { api } from 'fixture'; import cp from 'node:child_process'; cp.spawn('node', ['-e', '']);";
 
 // 私有：内存卷中创建独立包，经真实 Linter.verify 分析；不启动夹具中的进程与浏览器。
-async function f_check({ partition, code, files = {}, manifest = {}, exceptionFilesAllowModules = [], uiTest = { startup: 'src/cli.mjs serve' } }) {
-  const root = t_createFixture();
+async function f_check({ partition, code, files = {}, manifest = {}, builtinReference = false, builtinPackage = false, filename = null, ruleOptions = {}, uiTest = { startup: 'src/cli.mjs serve' } }) {
+  const root = i_createFixture();
+  const builtin = builtinReference || builtinPackage;
+  const builtinManifest = builtin ? { name: 'litenvi-node', type: 'module', exports: { '.': './src/api.mjs', './lite-*.mjs': './scripts/lite-*.mjs' } } : {};
+  if (builtin) code = code.replaceAll("from 'fixture'", "from 'litenvi-node'");
   try {
     const input = {
-      'package.json': JSON.stringify({ name: 'fixture', bin: { cli: './src/cli.mjs' }, exports: { '.': './src/api.mjs', './rules/*.mjs': './src/rules/*.mjs' }, ...manifest }),
+      'package.json': JSON.stringify({ name: 'fixture', bin: { cli: './src/cli.mjs' }, exports: { '.': './src/api.mjs', './rules/*.mjs': './src/rules/*.mjs' }, ...builtinManifest, ...manifest }),
       'src/cli.mjs': '',
       'src/api.mjs': 'export const api = 1;',
       'src/internal.mjs': 'export const hidden = 1;',
@@ -36,9 +38,9 @@ async function f_check({ partition, code, files = {}, manifest = {}, exceptionFi
       files: ['**/*.mjs'],
       languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
       plugins: { atb: { rules: { entry: entryRule } } },
-      rules: { 'atb/entry': ['error', { testDir: 'scripts/tests', uiTest, exceptionFilesAllowModules }] },
+      rules: { 'atb/entry': ['error', { testDir: 'scripts/tests', uiTest, ...ruleOptions }] },
     }];
-    const messages = linter.verify(code, config, { filename: path.resolve(root, `scripts/tests/${partition}/sample.test.mjs`) });
+    const messages = linter.verify(code, config, { filename: path.resolve(root, filename || (builtinReference ? 'scripts/tests/export/native-reference.test.mjs' : `scripts/tests/${partition}/sample.test.mjs`)) });
     return messages.map(message => message.messageId || message.message);
   } finally {
     fs.t_unmock();
@@ -81,21 +83,19 @@ const f_CASES = [
   { name: 'export 包自引用 API 启动本包 bin 仍拒绝', partition: 'export', code: "import cp from 'litenvi-node/lite-child_process.mjs'; cp.spawn('node', ['src/cli.mjs']);", manifest: f_PROCESS_MANIFEST, files: f_PROCESS_FILES, expected: ['spawnInExportPartition'] },
   { name: 'export 相对 API 启动本包 bin 与包自引用一致', partition: 'export', code: "import cp from '../../../src/lite-child_process.mjs'; cp.spawn('node', ['src/cli.mjs']);", manifest: f_PROCESS_MANIFEST, files: f_PROCESS_FILES, expected: ['spawnInExportPartition'] },
   { name: 'export 第三方子进程门面不能冒充本包 API 自测', partition: 'export', code: "import { api } from 'fixture'; import cp from 'litenvi-node/lite-child_process.mjs'; cp.spawn('node', ['-e', '']);", expected: ['spawnInExportPartition'] },
-  { name: 'export 只登记 fs 不授予原生进程权限', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [{ file: 'export/sample.test.mjs', modules: ['node:fs'], reason: '仅观察真实文件' }], expected: ['spawnInExportPartition'] },
-  { name: 'export 裸 child_process 授权与 node 前缀等价', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [{ file: 'export/sample.test.mjs', modules: ['child_process'], reason: '原生子进程对照' }], expected: [] },
+  { name: 'OS 原生对照文件不获得进程权限', partition: 'export', builtinPackage: true, filename: 'scripts/tests/export/lite-os.test.mjs', code: f_NATIVE_REFERENCE, expected: ['spawnInExportPartition'] },
+  { name: '内置原生对照支持裸 child_process', partition: 'export', builtinReference: true, code: f_NATIVE_REFERENCE.replace('node:child_process', 'child_process'), expected: [] },
   { name: 'export 原生对照未登记仍拒绝', partition: 'export', code: f_NATIVE_REFERENCE, expected: ['spawnInExportPartition'] },
-  { name: 'export 原生对照按文件与理由登记后放行', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: f_REFERENCE, expected: [] },
+  { name: 'litenvi 内置原生对照允许合法进程', partition: 'export', builtinReference: true, code: f_NATIVE_REFERENCE, expected: [] },
+  { name: '嵌套普通包不继承外层内置身份', partition: 'export', builtinReference: true, uiTest: { enabled: false }, code: "import { api } from '../../api.mjs'; import cp from 'node:child_process'; cp.spawn('node', ['-e', '']);", files: { 'scripts/package.json': '{"name":"nested","exports":{".":"./api.mjs"}}', 'scripts/api.mjs': 'export const api = 1;' }, expected: ['spawnInExportPartition'] },
   { name: 'export 原生非 Node 命令同样需要登记', partition: 'export', code: "import { api } from 'fixture'; import cp from 'node:child_process'; cp.spawn('cat', []);", expected: ['spawnInExportPartition'] },
-  { name: 'export 原生非 Node 命令登记后可作对照', partition: 'export', code: "import { api } from 'fixture'; import cp from 'node:child_process'; cp.spawn('cat', []);", exceptionFilesAllowModules: f_REFERENCE, expected: [] },
-  { name: 'export 原生对照登记不影响其他文件', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [{ file: 'export/other.test.mjs', modules: ['node:child_process'], reason: '其他文件的原生对照' }], expected: ['spawnInExportPartition'] },
-  { name: 'export 原生对照登记后仍须导入公开入口', partition: 'export', code: "import cp from 'node:child_process'; cp.spawn('node', ['-e', '']);", exceptionFilesAllowModules: f_REFERENCE, expected: ['missingExportEntry'] },
-  { name: 'export 原生对照登记后仍禁止面外导入', partition: 'export', code: "import { hidden } from '../../../src/internal.mjs'; import cp from 'node:child_process'; cp.spawn('node', ['-e', '']);", exceptionFilesAllowModules: f_REFERENCE, expected: ['importOffExportFace'] },
-  { name: 'export 原生对照登记不能授权第三方门面', partition: 'export', code: "import { api } from 'fixture'; import cp from 'litenvi-node/lite-child_process.mjs'; cp.spawn('node', ['-e', '']);", exceptionFilesAllowModules: f_REFERENCE, expected: ['spawnInExportPartition'] },
-  { name: 'export 原生对照登记不能放行本包 bin', partition: 'export', code: "import { api } from 'fixture';" + f_DRIVE, exceptionFilesAllowModules: f_REFERENCE, expected: ['spawnInExportPartition'] },
-  { name: 'export API 自测和原生对照登记都不能放行本包命令名', partition: 'export', code: "import cp from 'litenvi-node/lite-child_process.mjs'; cp.spawn('cli', []);", manifest: f_PROCESS_MANIFEST, files: f_PROCESS_FILES, exceptionFilesAllowModules: f_REFERENCE, expected: ['spawnInExportPartition'] },
-  { name: 'export 原生对照登记拒绝通配符扩大范围', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [{ file: 'export/*.test.mjs', modules: ['node:child_process'], reason: '原生对照' }], expected: ['invalidModuleException'] },
-  { name: 'export 原生对照登记拒绝越界路径', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [{ file: '../outside.test.mjs', modules: ['node:child_process'], reason: '原生对照' }], expected: ['invalidModuleException'] },
-  { name: 'export 原生对照登记拒绝绝对路径', partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [{ file: '/tmp/sample.test.mjs', modules: ['node:child_process'], reason: '原生对照' }], expected: ['invalidModuleException'] },
+  { name: '内置原生对照支持非 Node 命令', partition: 'export', builtinReference: true, code: "import { api } from 'fixture'; import cp from 'node:child_process'; cp.spawn('cat', []);", expected: [] },
+  { name: '内置原生对照不影响同包其他测试', partition: 'export', builtinPackage: true, code: f_NATIVE_REFERENCE, expected: ['spawnInExportPartition'] },
+  { name: 'export 原生对照登记后仍须导入公开入口', partition: 'export', builtinReference: true, code: "import cp from 'node:child_process'; cp.spawn('node', ['-e', '']);", expected: ['missingExportEntry'] },
+  { name: 'export 原生对照登记后仍禁止面外导入', partition: 'export', builtinReference: true, code: "import { hidden } from '../../../src/internal.mjs'; import cp from 'node:child_process'; cp.spawn('node', ['-e', '']);", expected: ['importOffExportFace'] },
+  { name: 'export 原生对照登记不能授权第三方门面', partition: 'export', code: "import { api } from 'fixture'; import cp from 'litenvi-node/lite-child_process.mjs'; cp.spawn('node', ['-e', '']);", expected: ['spawnInExportPartition'] },
+  { name: 'export 原生对照登记不能放行本包 bin', partition: 'export', builtinReference: true, code: "import { api } from 'fixture';" + f_DRIVE, expected: ['spawnInExportPartition'] },
+  { name: 'export API 自测和原生对照登记都不能放行本包命令名', partition: 'export', code: "import cp from 'litenvi-node/lite-child_process.mjs'; cp.spawn('cli', []);", manifest: f_PROCESS_MANIFEST, files: f_PROCESS_FILES, expected: ['spawnInExportPartition'] },
   { name: 'bin 外部命令不能替代本包 bin 入口', partition: 'bin', code: "import cp from 'node:child_process'; cp.spawn('git', ['status']);", expected: ['missingBinEntry'] },
   { name: 'ui 只有启动没有首页不合格', partition: 'ui', code: f_DRIVE, expected: ['missingIndexNavigation'] },
   { name: 'ui 只有首页没有启动不合格', partition: 'ui', code: f_PAGE + "await page.goto('http://127.0.0.1:8888/');", expected: ['missingStartupCall'] },
@@ -121,9 +121,7 @@ for (const scenario of f_CASES) {
   });
 }
 
-/** 场景：原生对照授权必须附带非空理由，由 ESLint 配置校验拒绝缺失或空白说明。 */
-test('原生对照登记必须填写理由', async () => {
-  for (const item of [{ file: 'export/sample.test.mjs', modules: ['node:child_process'] }, { file: 'export/sample.test.mjs', modules: ['node:child_process'], reason: '  ' }]) {
-    await assert.rejects(f_check({ partition: 'export', code: f_NATIVE_REFERENCE, exceptionFilesAllowModules: [item] }), /reason|pattern|match/, '缺失或空白理由应拒绝配置');
-  }
+/** 场景：测试入口也不再接受项目可配置的原生模块例外。 */
+test('入口规则拒绝旧例外参数', async () => {
+  await assert.rejects(f_check({ partition: 'export', code: f_NATIVE_REFERENCE, ruleOptions: { exceptionFilesAllowModules: [] } }), /additional|unexpected|exceptionFilesAllowModules/, '删除的例外参数必须明确拒绝');
 });

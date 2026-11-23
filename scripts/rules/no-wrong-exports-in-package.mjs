@@ -1,15 +1,6 @@
-// atb/no-wrong-exports-in-package — package.json 入口面（bin/main/exports）不得指向测试文件
-// 或构建工具目录文件。
-// 测试文件不产出对外接口（testDir 是受管测试代码唯一居所，与 no-wrong-access-level 同名
-// 同语义）；buildToolDir 是构建期/开发期辅助支撑（与 no-undeclared-dependencies-imports
-// 同名同语义）——两者都不是对外交付面，出现在 bin/main/exports 目标上即配置错误：外部将
-// 经入口面 import/执行到测试或构建工具代码。
-// 目标按字面路径判定；exports 通配模式以探测文件近似判定（模式能命中 testDir/buildToolDir
-// 下任意文件即报——模式本身无法枚举，如实声明为近似）。git/URL 类非路径目标不在本规则
-//（exports 值恒为包内相对路径，无需特判）。
-// 本规则运行在 package.json 上（经 JSON parser 接线，如 eslint-plugin-package-json）；testDir
-// 相对 ESLint 运行目录解析（前提约束：运行目录必须在仓库根，绝对路径传入即抛，与家族口径
-// 一致），buildToolDir 相对包根（manifest 所在目录）解析；报告落在清单 Program 节点。
+// 包入口不能发布可执行测试或构建工具；测试目录的精确辅助模块可作为对外 t_ 接口。
+// main/exports 中的精确辅助模块由定义侧继续检查接口级别；测试目录的 bin 仍禁止。
+// 测试目录通配模式可能暴露用例，沿原有保守规则拒绝；不新增任意文件豁免。
 import path from 'node:path';
 import { i_minimatch } from '../lib/attributions.mjs';
 
@@ -32,14 +23,17 @@ function f_faceTargets(manifest) {
  for (const condition of ['node', 'import', 'require', 'default']) collect(key, value[condition]);
  }
  };
- for (const [key, value] of Object.entries(manifest.exports || {})) collect(key, value);
+ const exports = manifest.exports;
+ if (exports && typeof exports === 'object' && !Array.isArray(exports) && Object.keys(exports).some(key => key.startsWith('.'))) {
+ for (const [key, value] of Object.entries(exports)) collect(key, value);
+ } else collect('.', exports);
  return targets;
 }
 
 export default {
  meta: {
  type: 'problem',
- docs: { description: 'package.json 入口面（bin/main/exports）不得指向测试文件（testDir）或构建工具目录（buildToolDir）文件——它们不产出对外接口' },
+ docs: { description: '禁止包入口暴露可执行测试与构建工具；允许精确登记测试辅助模块，接口级别另行校验' },
  schema: [{
  type: 'object',
  properties: {
@@ -49,7 +43,7 @@ export default {
  additionalProperties: false,
  }],
  messages: {
- faceTargetInternal: "入口面 {{face}} 的目标 '{{target}}' 指向{{kind}}文件：测试与构建工具代码不产出对外接口，入口面（bin/main/exports）必须指向生产代码",
+ faceTargetInternal: "入口面 {{face}} 的目标 '{{target}}' 指向{{kind}}文件：测试命令、可执行测试与构建工具不能作为对外入口；测试辅助模块只能精确登记为导入入口",
  patternTargetInternal: "入口面 {{face}} 的通配模式 '{{target}}' 可命中{{kind}}文件：测试与构建工具代码不得经 exports 模式暴露",
  },
  },
@@ -80,7 +74,8 @@ export default {
  const pattern = target.replace(/^\.\//, '').replaceAll('*', '**');
  for (const { kind, dir } of internalDirs) {
  const probe = `${path.relative(packageDir, dir).split(path.sep).join('/')}/probe.mjs`;
- if (i_minimatch(probe, pattern)) {
+ const prefix = path.resolve(packageDir, target.split('*')[0].replace(/^\.\//, ''));
+ if (i_minimatch(probe, pattern) || prefix === dir || prefix.startsWith(`${dir}${path.sep}`)) {
  context.report({ node, messageId: 'patternTargetInternal', data: { face, target, kind } });
  break;
  }
@@ -88,7 +83,7 @@ export default {
  continue;
  }
  const hit = hitsInternal(path.resolve(packageDir, target.replace(/^\.\//, '')));
- if (hit) {
+ if (hit && (hit.kind !== '测试' || face.startsWith('bin') || /\.test\.[cm]?js$/.test(target))) {
  context.report({ node, messageId: 'faceTargetInternal', data: { face, target, kind: hit.kind } });
  }
  }

@@ -28,11 +28,11 @@
     "test:coverage": "node --test --experimental-test-coverage \"scripts/tests/**/*.test.mjs\""
   },
   "dependencies": {
+    "eslint-plugin-package-json": "0.91.2",
     "litenvi-node": "file:../litenvi-node"
   },
   "devDependencies": {
     "eslint": "9.39.4",
-    "eslint-plugin-package-json": "0.91.2",
     "eslint-plugin-playwright": "2.12.2",
     "globals": "17.14.0"
   }

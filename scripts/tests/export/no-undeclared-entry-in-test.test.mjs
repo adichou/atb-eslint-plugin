@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
 import { Linter } from 'eslint';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 import entryRule from 'atb-eslint-plugin/rules/no-undeclared-entry-in-test.mjs';
 
 // 夹具：files 相对路径 → 内容；返回夹具根。manifest 声明 bin（fixture-cli → src/cli.mjs）
@@ -26,7 +26,7 @@ function f_fixture(files) {
     'src/internal.mjs': 'export const i_hidden = 1;\n',
     'scripts/tests/helper.mjs': 'export const t_helper = 1;\n',
   };
-  return t_createFixture({ ...defaults, ...files });
+  return i_createFixture({ ...defaults, ...files });
 }
 
 // 真实 ESLint 执行：lint 夹具内指定文件，返回消息数组（options 透传规则）。

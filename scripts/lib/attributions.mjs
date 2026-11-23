@@ -198,7 +198,7 @@ export function i_entryFacesOf(projectRoot) {
  if (target.includes('*')) { patterns.push(target.replace(/^\.\//, '').replaceAll('*', '**')); return; }
  importFaces.add(path.resolve(projectRoot, target.replace(/^\.\//, '')));
  };
- pushImport(manifest.main);
+ if (manifest.exports === undefined) pushImport(manifest.main);
  // exports 顶层键是路径模式（'.'、'./config.mjs'…），其值才是条件对象或目标串。
  const collect = (value) => {
  if (!value) return;
@@ -208,8 +208,11 @@ export function i_entryFacesOf(projectRoot) {
  for (const key of ['node', 'import', 'require', 'default']) collect(value[key]);
  }
  };
- for (const value of Object.values(manifest.exports || {})) collect(value);
- for (const bin of Object.values(manifest.bin || {})) {
+ const exports = manifest.exports;
+ if (exports && typeof exports === 'object' && !Array.isArray(exports) && Object.keys(exports).some(key => key.startsWith('.'))) {
+ for (const value of Object.values(exports)) collect(value);
+ } else collect(exports);
+ for (const bin of typeof manifest.bin === 'string' ? [manifest.bin] : Object.values(manifest.bin || {})) {
  if (typeof bin !== 'string') continue;
  binFaces.add(path.resolve(projectRoot, bin.replace(/^\.\//, '')));
  }

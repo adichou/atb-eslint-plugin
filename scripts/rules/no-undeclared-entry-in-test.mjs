@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { i_projectRootOf } from '../lib/attributions.mjs';
 import { i_hookEntries } from '../lib/hook-entries.mjs';
-import { i_testModuleExceptionsSchema, i_validModuleExceptionFile, i_moduleExceptionAllows } from '../lib/test-module-exceptions.mjs';
+import { i_builtinModuleAllows } from '../lib/test-module-exceptions.mjs';
 import { i_configEntries, i_configTestName, i_configTestEvidence } from '../lib/config-test-analysis.mjs';
 import { i_testEntryManifest, i_testCommandWords, i_resolveTestModule, i_isTestImportEntry, i_analyzeTestEntries } from '../lib/test-entry-analysis.mjs';
 
@@ -32,7 +32,6 @@ export default {
         testDir: { type: 'string' },
         hooksDir: { type: 'string' },
         packageJsonPath: { type: 'string' },
-        exceptionFilesAllowModules: i_testModuleExceptionsSchema,
         uiTest: {
           type: 'object',
           properties: { enabled: { type: 'boolean' }, startup: { type: 'string' }, index: { type: 'string' } },
@@ -53,8 +52,7 @@ export default {
       configStartupMissing: 'uiTest 已启用但未声明 startup：必须声明启动命令',
       startupOffBin: "uiTest.startup 的入口文件 '{{file}}' 不在 package.json bin 声明块",
       invalidIndexConfig: 'uiTest.index 必须是站内首页路径，例如 / 或 /index.html，不能包含协议、查询或片段',
-      spawnInExportPartition: 'export 分区测试的进程驱动放错分区或缺少原生用途登记：本包 bin 应移至 bin/ 或 ui/；本包公开子进程 API 可自测，原生对照或隔离进程须按文件登记 exceptionFilesAllowModules 的 node:child_process 模块与理由',
-      invalidModuleException: "exceptionFilesAllowModules 的 '{{file}}' 必须是相对 testDir 的单个代码文件，不允许绝对路径、越界或通配符",
+      spawnInExportPartition: 'export 分区测试的进程驱动放错分区：本包 bin 应移至 bin/ 或 ui/；本包公开子进程 API 可自测，仅 litenvi-node 内置的原生对照文件可调用原生进程',
       missingBinEntry: 'bin 分区测试必须实际调用 package.json bin 声明块或 hooksDir 的 hook 命令文件；只导入 helper 或运行测试 runner 不算业务入口',
       missingExportEntry: 'export 分区测试必须 import package.json exports/main 声明的任一文件；内建、第三方依赖和未调用的 helper 不算被测入口',
       missingStartupCall: "ui 分区测试必须实际执行 uiTest.startup 命令（'{{startup}}'），可通过已调用的 helper 完成",
@@ -81,12 +79,6 @@ export default {
       'Program:exit'(node) {
         let reported = false;
         const report = (messageId, data = {}, location = node) => { reported = true; context.report({ node: location, messageId, data }); };
-        const exceptions = options.exceptionFilesAllowModules || [];
-        for (const item of exceptions) {
-          if (!i_validModuleExceptionFile(testDir, item.file)) {
-            report('invalidModuleException', { file: item.file }); return;
-          }
-        }
         if (!['bin', 'export', 'config', ...(uiEnabled ? ['ui'] : [])].includes(partition)) {
           report('testOutsidePartitions', { file: path.relative(testDir, filename) }); return;
         }
@@ -124,7 +116,7 @@ export default {
             const self = item.specifier === info.manifest.name || item.specifier.startsWith(`${info.manifest.name}/`);
             if (self || target && f_inside(root, target)) report('importOffExportFace', { file: target ? path.relative(root, target) : item.specifier }, item.node);
           }
-          const nativeReference = i_moduleExceptionAllows(exceptions, testDir, filename, 'node:child_process');
+          const nativeReference = i_builtinModuleAllows(filename, 'node:child_process');
           for (const drive of evidence.drives) {
             // 启动本包 bin 优先按命令分区处理；API 自测与原生对照登记均不能覆盖它。
             const ownBin = info.scriptEntries.has(drive.target);

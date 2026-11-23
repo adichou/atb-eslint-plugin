@@ -1,23 +1,11 @@
-// atb/no-out-of-level-access — 当前项目 f_/i_/t_ 前缀接口的访问边界。
-// 只解释本项目源码的接口；依赖包与 node: 的 f_/i_ 前缀由其所属项目自行检查，本项目不替它
-// 解释。唯一例外：t_ 名（测试专用）在生产文件中禁用——测试方法不能在生产中使用，来源是
-// 依赖包或 node: 也不例外（名字即声明，不读依赖源码）。
-// 项目根自锚定：受检文件向上找最近 package.json 即所属包根——manifest（包名自引用解析）、
-// 内外部判定与显示路径均以它为基准；不落在任何包内的文件不受检。
-// 相对路径、绝对路径和包名自引用按实际项目路径归属，软链越出根目录与 node_modules 不受管。
-// f_ 禁止跨文件访问；i_ 允许本项目生产协作、禁止测试触达；t_ 只允许测试路径使用（前缀固定，不提供自定义）。
-// 测试身份单一目录：testDir 即测试代码唯一居所（相对仓库根的相对路径，缺省 scripts/tests，
-// 与 no-wrong-access-level 同名同语义；前提约束：ESLint 运行目录必须在仓库根，绝对路径传入
-// 即抛），不设多目录与 fixture 名单——所有测试代码集中在 testDir 下管理。
-// 导出面分工：测试文件（testDir 命中）导出面由 atb/no-wrong-access-level 统一要求 t_
-//（f_/i_/无前缀均落入其 testExportLevel 口径），本规则跳过测试文件导出面避免同面双报，
-// 只核验生产文件的导出面。
-// 模块对象、别名、解构、静态属性与同文件参数转传保留来源。普通函数返回值一律视为数据，
-// 不继承接口身份（不执行被调函数、不推断跨函数返回值）——级别随名字走：测试专用接口以 t_
-// 命名，直接导入与模块对象访问即被拦，无需返回句柄登记。
-// 模块对象的属性名或加载目标无法静态确定时停止该次权限判断，不将未知情况认定为越级。
-// 不执行提供者源码，不推断任意运行时数据类型或跨函数返回值。
+// 接口访问边界：f_ 仅定义文件；i_ 仅同包同侧协作；t_ 仅测试代码可消费。
+// 生产侧与测试侧各自可以定义 i_，两侧不能互相访问；跨包 i_ 同样禁止。
+// 提供方身份按真实模块位置识别，支持本地/包自引用/file URL、软链接、别名与模块成员。
+// 依赖包的 f_ 仍由其所属项目解释；Node 内置模块不套用项目 i_ 契约。
+// 测试侧导出声明由 no-wrong-access-level 核验，避免同面重复报告。
+// 不执行被调模块、不推断任意返回数据类型；动态来源不可确定时沿现有归因边界停止。
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
 import { i_evaluateStaticString, i_packageNameOf, i_projectRootOf, i_repoRelative } from '../lib/attributions.mjs';
 
@@ -60,8 +48,11 @@ export default {
  additionalProperties: false,
  }],
  messages: {
+ externalInternalAccess: "'{{name}}' 是包内接口（i_），不能跨包导入或访问",
+ productionTestInternalAccess: "'{{name}}' 是测试侧的包内接口（i_），生产文件 {{file}} 禁止导入或访问",
+
  filePrivateAccess: "'{{name}}' 是文件私有接口（f_ 前缀），禁止跨文件导入或经模块对象访问",
- testInternalAccess: "'{{name}}' 是包内协作接口（i_ 前缀），测试代码不设 i_ 级别：测试协作接口用 t_，生产代码只对测试开放公开或 t_ 接口",
+ testInternalAccess: "'{{name}}' 是包内协作接口（i_ 前缀），调用方位于测试侧、提供方位于生产侧，禁止测试访问生产内部实现",
  testOnlyAccess: "'{{name}}' 是测试专用接口（t_ 前缀），生产文件 {{file}} 禁止引用或调用",
  filePrivateExport: "'{{name}}' 是文件私有接口，禁止出现在导出面（具名导出或导出对象键）",
  testOnlyExport: "'{{name}}' 是测试专用接口，仅测试文件可导出；生产文件 {{file}} 禁止导出",
@@ -89,10 +80,12 @@ export default {
  const sourceCode = context.sourceCode || context.getSourceCode();
  const manifest = f_manifest(projectRoot);
 
- // 项目内目标才参与前缀解释；依赖模块仅保留外部标记，不读取它们的接口定义（t_ 名例外——生产禁用）。
+ // 来源同时记录包归属和测试角色；外部模块不读取实现，按 i_/t_ 契约限制消费。
  function sourceOf(specifier) {
  let target;
- if (specifier.startsWith('.') || path.isAbsolute(specifier)) {
+ if (specifier.startsWith('file:')) {
+ try { target = fileURLToPath(specifier); } catch { return { f_specifier: specifier, f_external: true }; }
+ } else if (specifier.startsWith('.') || path.isAbsolute(specifier)) {
  target = path.resolve(path.dirname(filename), specifier);
  } else if (manifest.name && i_packageNameOf(specifier) === manifest.name) {
  const subpath = specifier.slice(manifest.name.length).replace(/^\//, '');
@@ -115,8 +108,10 @@ export default {
  target = path.resolve(projectRoot, exported || subpath || manifest.main || 'index.js');
  } else return { f_specifier: specifier, f_external: true };
  const relativeTarget = i_repoRelative(target, projectRoot);
- const external = relativeTarget === null || relativeTarget.split('/').includes('node_modules');
- return { f_specifier: specifier, f_external: external, f_module: relativeTarget, f_member: '' };
+ const providerRoot = relativeTarget === null ? null : i_projectRootOf(path.resolve(projectRoot, relativeTarget));
+ const external = relativeTarget === null || relativeTarget.split('/').includes('node_modules')
+ || providerRoot !== null && i_repoRelative(providerRoot, projectRoot) !== '';
+ return { f_specifier: specifier, f_external: external, f_module: relativeTarget, f_test: i_repoRelative(target, testDir) !== null, f_member: '' };
  }
 
 
@@ -129,8 +124,11 @@ export default {
  function reportAccess(node, name, source) {
  const kind = f_classify(name);
  if (!kind) return false;
- // 依赖包与 node: 前缀只解释 t_：测试方法不能在生产中使用，来源是依赖包也不例外（名字即
- // 声明，不读依赖源码）；f_/i_ 仍由其所属项目自行检查，本项目不替它解释。
+ // 外部包 i_ 禁止消费；t_ 只允许测试调用。Node 内置模块不套用项目 i_ 命名契约。
+ if (source.f_external && kind === 'internal' && !source.f_specifier.startsWith('node:')) {
+ context.report({ node, messageId: 'externalInternalAccess', data: { name } });
+ return true;
+ }
  if (source.f_external && kind !== 'testOnly') return false;
  if (kind === 'filePrivate') {
  // f_ 只允许定义文件内使用：导入与经模块对象访问一律跨文件。
@@ -138,9 +136,8 @@ export default {
  return true;
  }
  if (kind === 'internal') {
- // i_ 只解释本项目接口，生产协作放行，测试触达报错。
- if (isTestFile) {
- context.report({ node, messageId: 'testInternalAccess', data: { name, file: relative } });
+ if (isTestFile !== source.f_test) {
+ context.report({ node, messageId: isTestFile ? 'testInternalAccess' : 'productionTestInternalAccess', data: { name, file: relative } });
  return true;
  }
  return false;
@@ -300,7 +297,7 @@ export default {
  function checkExportedName(node, name, source, surfaceOverride) {
  if (source?.f_external) name = surfaceOverride ?? name;
  const kind = f_classify(name);
- // 测试文件导出面归 atb/no-wrong-access-level 统一要求 t_，此处跳过避免同面双报。
+ // 测试导出由定义侧区分内部 i_ 和对外 t_，此处避免同面双报。
  if (isTestFile) return;
  if (kind === 'filePrivate') {
  context.report({ node, messageId: 'filePrivateExport', data: { name } });
@@ -379,7 +376,7 @@ export default {
  ImportDeclaration(node) {
  registerImportDeclaration(node);
  const source = sourceOf(node.source.value);
- // 同项目来源按原导出名核验；依赖包前缀仅 t_ 例外（生产禁用），f_/i_ 不在本项目解释。
+ // 按原导出名和真实提供方检查，改名不改变 i_/t_ 权限。
  for (const spec of node.specifiers) {
  if (spec.type !== 'ImportSpecifier') continue;
  // 改名导入仍检查原导出名

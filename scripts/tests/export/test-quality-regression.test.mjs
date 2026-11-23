@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from 'eslint';
-import rule from 'atb-eslint-plugin/rules/no-bad-test-patterns.mjs';
+import rule from 'atb-eslint-plugin/rules/no-bad-patterns-in-test.mjs';
 
 const f_PREFIX = "import { test, describe, beforeEach as prepare } from 'node:test'; import assert from 'node:assert/strict'; import { expect } from '@playwright/test';\n";
 // 私有：每个样例独立构造规则配置，不提供例外或缩减检查范围。
@@ -59,11 +59,11 @@ test('质量规则拒绝旧配置参数', () => {
 
 /** 场景：相对导入与包自引用按真实清单归因，同名内部文件不能冒认 lite 门面。 */
 test('质量检查统一模块来源', async () => {
-  const { t_createFixture } = await import('../lint-fixture.mjs');
+  const { i_createFixture } = await import('../lint-fixture.mjs');
   const { default: fs } = await import('litenvi-node/lite-fs.mjs');
   const { default: path } = await import('node:path');
   for (const packageName of ['litenvi-node', 'unrelated']) {
-    const root = t_createFixture({
+    const root = i_createFixture({
       'package.json': JSON.stringify({ name: packageName, exports: { './lite-*.mjs': './src/lite-*.mjs' } }),
       'src/lite-fs.mjs': 'export default {};',
     });

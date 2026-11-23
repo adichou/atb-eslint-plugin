@@ -23,11 +23,11 @@ export default {
       businessReplacement: '测试不能替换本项目业务实现；通过真实入口执行，在环境门面或已设计的测试接口装配依赖',
       testFileDependency: '不能导入另一个测试文件；共享准备、操作和观察放在普通 helper',
       productionDependsOnTests: '生产代码不能依赖测试目录或夹具',
-      reverseEntryDependency: '共享库不能反向导入声明的命令入口，请下沉共同实现',
+      reverseEntryDependency: '内部库不能反向导入声明的命令入口，请下沉共同实现',
       observationMutation: '公共观察账本只能读取，不能通过改写观察值制造测试结果',
       missingHookReset: '命令钩子缺少同一命令的清理登记，请在 finally、after 或返回的清理函数复位',
       globalStateLeak: '修改进程全局状态后缺少原值恢复，请保存原值并在 finally/after 恢复',
-      moduleLoadSideEffect: '共享模块不能在加载时写盘、启动监听或修改进程状态；将操作放入明确调用的函数',
+      moduleLoadSideEffect: '内部库不能在加载时写盘、启动监听或修改进程状态；将操作放入明确调用的函数',
     },
   },
   create(context) {

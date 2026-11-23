@@ -1,10 +1,6 @@
-// 使用官方 RuleTester 执行真实规则；受检代码直接传字符串，无需文件系统或命令模拟。
-// 覆盖两块：导出面分工（测试文件导出面移交 no-wrong-access-level；生产禁 f_ 导出与 t_ 公开
-// 别名）与访问面矩阵（f_ 跨文件 / i_ 测试触达 / t_ 生产消费 / 模块对象·解构·别名转存·转调
-// 包装的归因传播 / 包名自引用 / 依赖包与 node: 不解释前缀 / 返回值不传播身份与不可知跳过的
-// 静态边界）。规则自锚定项目根（受检文件向上找最近 package.json），用例给绝对 filename 与
-// 相对 testDir（前提约束：ESLint 运行目录必须在仓库根，testDir 不支持绝对路径）；相对导入
-// 目标不必真实存在（归因是纯路径解析，不做磁盘模块解析）。
+// 使用真实 RuleTester 验证访问边界：f_ 跨文件、i_ 跨侧/跨包与 t_ 生产消费。
+// 测试侧导出声明由定义规则检查；模块对象、别名、解构和再导出不能改变实际来源。
+// 受检样例通过绝对 filename 与相对 testDir 声明角色，不执行样例模块。
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -58,9 +54,9 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
     },
     // ── 依赖包与 node: 内建：f_/i_ 前缀不解释（由其所属项目自查）；t_ 名例外，见 invalid ──
     {
-      name: '依赖包的 f_/i_ 名称不解释',
+      name: '依赖包普通 f_ 名称保持原有解释边界',
       filename: prodFile,
-      code: "import { f_thing, i_tool } from 'some-pkg';\nf_thing();\ni_tool();\n",
+      code: "import { f_thing } from 'some-pkg';\nf_thing();\n",
       options,
     },
     {

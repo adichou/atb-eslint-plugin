@@ -5,13 +5,13 @@ import path from 'node:path';
 import fs from 'litenvi-node/lite-fs.mjs';
 import { Linter } from 'eslint';
 import entryRule from 'atb-eslint-plugin/rules/no-undeclared-entry-in-test.mjs';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 
 const f_READ = "import fs from 'litenvi-node/lite-fs.mjs'; const config = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));";
 
 // 私有：运行实际入口规则，所有项目文件都在内存卷中。
 function f_check(code, filename = 'package.test.mjs') {
-  const root = t_createFixture({ 'package.json': '{"name":"fixture"}', 'eslint.config.mjs': 'export default [{rules:{}}];' });
+  const root = i_createFixture({ 'package.json': '{"name":"fixture"}', 'eslint.config.mjs': 'export default [{rules:{}}];' });
   try {
     const linter = new Linter({ cwd: root });
     return linter.verify(code, [{ files: ['**/*.mjs'], plugins: { atb: { rules: { entry: entryRule } } }, rules: { 'atb/entry': 'error' } }], { filename: path.join(root, 'scripts/tests/config', filename) }).map(message => message.messageId);

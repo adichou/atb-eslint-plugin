@@ -1,7 +1,7 @@
 // 使用真实 RuleTester 验证 API 归因与质量约束；受检字符串不是测试自身执行的代码。
 import { describe, it } from 'node:test';
 import { RuleTester } from 'eslint';
-import rule from 'atb-eslint-plugin/rules/no-bad-test-patterns.mjs';
+import rule from 'atb-eslint-plugin/rules/no-bad-patterns-in-test.mjs';
 RuleTester.describe = describe; RuleTester.it = it;
 const tester = new RuleTester({ languageOptions: { ecmaVersion: 'latest', sourceType: 'module' } });
 const f_case = (scenario, body, title = '示例用例') =>
@@ -16,7 +16,7 @@ const f_case = (scenario, body, title = '示例用例') =>
     '});',
   ].join('\n') + '\n';
 
-tester.run('no-bad-test-patterns', rule, {
+tester.run('no-bad-patterns-in-test', rule, {
 valid: [
 { name: "常规断言路径不误报", code: f_case('常规断言路径', "  const value = one();\n  assert.equal(value, 1, '应返回 1');") },
 { name: "it 注册同样按用例核验且合规放行", code: [

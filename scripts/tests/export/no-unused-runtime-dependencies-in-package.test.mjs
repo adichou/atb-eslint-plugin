@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
 import { Linter } from 'eslint';
-import { t_createFixture } from '../lint-fixture.mjs';
+import { i_createFixture } from '../lint-fixture.mjs';
 import packageJsonPlugin from 'eslint-plugin-package-json';
 import unusedRuntimeDependenciesInPackage from 'atb-eslint-plugin/rules/no-unused-runtime-dependencies-in-package.mjs';
 
@@ -26,7 +26,7 @@ async function f_lint(dir) {
 
 /** 场景：dependencies 声明但包内无导入的死依赖报告；被导入的不报。 */
 test('invalid：死运行时依赖报告', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', dependencies: { 'used-pkg': '1.0.0', 'dead-pkg': '1.0.0' } }),
     'src/a.mjs': "import 'used-pkg';\n",
   });
@@ -40,7 +40,7 @@ test('invalid：死运行时依赖报告', async () => {
 
 /** 场景：全消费放行；devDependencies 未导入不报（scripts/CLI 消费面，如实留白）。 */
 test('valid：全消费与 devDependencies 留白', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
       dependencies: { 'used-pkg': '1.0.0' },
@@ -55,7 +55,7 @@ test('valid：全消费与 devDependencies 留白', async () => {
 
 /** 场景：子路径导入归并到包名（used-pkg/sub.js 算 used-pkg 使用）。 */
 test('valid：子路径导入归并包名', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', dependencies: { 'used-pkg': '1.0.0' } }),
     'src/a.mjs': "import { x } from 'used-pkg/sub.js';\n",
   });
@@ -66,7 +66,7 @@ test('valid：子路径导入归并包名', async () => {
 
 /** 场景：node_modules 排除面——依赖包内部的导入不算本包使用。 */
 test('invalid：node_modules 内导入不算使用', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', dependencies: { 'dead-pkg': '1.0.0' } }),
     'node_modules/other/index.js': "import 'dead-pkg';\n",
   });
@@ -79,7 +79,7 @@ test('invalid：node_modules 内导入不算使用', async () => {
 
 /** 场景：optionalDependencies 与 dependencies 同口径报告死声明。 */
 test('invalid：optionalDependencies 死声明报告', async () => {
-  const dir = t_createFixture({
+  const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', optionalDependencies: { 'dead-optional': '1.0.0' } }),
     'src/a.mjs': 'export const x = 1;\n',
   });

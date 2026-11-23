@@ -1,43 +1,10 @@
-// atb/no-wrong-access-level — 非导出方法必须以 f_ 开头（文件私有），测试文件导出面必须 t_。
-// ATB 访问级别政策：生产文件的导出级别由使用方自行声明（本规则不检查生产导出面）；凡不在
-// 导出面的顶层方法一律 f_ 前缀——文件私有，跨文件消费边界由 no-out-of-level-access 承接。
-// 级别前缀只属于导出面：非导出绑定不得使用 i_/t_ 前缀（i_ 是生产包内协作级别、t_ 是测试
-// 专用级别，非导出局部就是文件私有——函数须 f_，数据无须前缀）。
-// 测试文件（testDir 目录内）导出面只放行 t_：具名导出（声明、名单、re-export 同口径，面名
-// 以 exported 名为准）非 t_ 一律报——无前缀导出即公开接口，生产引用即绕过 t_ 边界。默认导出
-// 无名字面，不参与 t_ 要求；CommonJS 导出面不在本规则（生态测试文件为 ESM；生产文件的 CJS
-// 导出面仍由 no-out-of-level-access 核验，测试 CJS 导出面两头均不检，如实留白）。
-// 本规则不设路径门：受检面由 ESLint files 配置决定（flat config 的 files 即管辖边界，配置
-// 基准路径之外的文件本就不会路由进来）。testDir 仅支持相对仓库根的相对路径（缺省
-// scripts/tests，与工厂 testDir 同名透传）；前提约束：ESLint 运行目录必须在仓库根——不支持
-// 绝对路径，传入即抛（fail-loud，防运行目录漂移静默失效）。
-// 入口面核验（增强）：非测试文件的公开具名导出（无前缀）与 t_ 具名导出属于对外接口面——
-// 只应出现在对外导入面文件（manifest main/exports 目标，经包根自锚定判定；含 exports 通配）
-// 上；不在入口面的文件挂公开/t_ 导出即错位：公开/t_ 的受众在包外，而包外只能 import 入口面
-// 文件——挂在内部文件上外部够不着、内部又不该用，是假公开。内部文件的导出面用 i_（包内
-// 协作）；f_ 导出与 default 无名字面不参与本增强（前者归 no-out-of-level-access 的
-// filePrivateExport，后者无前缀体系名字面）。不落在任何包内（无 package.json 锚）的文件
-// 跳过本增强。
-// 检查面：模块顶层 FunctionDeclaration 与顶层函数值绑定（const/let/var = function/arrow）；
-// 非函数值的顶层变量绑定只查 i_/t_ 前缀（数据常量不要求 f_）；类/对象方法与嵌套函数不查
-// f_（按名字拿不走，f_ 的检查机制无从下手）。返回面相干：函数 return 的对象字面量整棵树
-//（嵌套对象/数组、方法与数据键）里，显式带 i_/t_/f_ 前缀的键，级别必须与函数同级或为 f_——
-// 前缀是牌子，牌子与句柄受众不符即假牌子：公开工厂藏 t_ 方法、i_ 工厂藏 t_ 键、t_ 工厂挂 i_ 名
-// 均报。无前缀键不是级别声明（读法 B）：受众由句柄封顶——i_ 函数返回 { query() {} } 的 query
-// 随句柄封顶在生产包内，名字无跨受众宣称，不参与核级；线协议字段名、框架契约键等不可带
-// 前缀的名字因此不受累。测试文件例外：显式 i_ 键是 mock 实现生产契约的唯一合法拼写
-//（测试导出必须 t_、非导出绑定禁 i_，i_ 名只能落在成员键上），放行；t_ 键不放行（注入
-// 生产即越权消费）。函数级别：匿名箭头无名字按无前缀=公开；命名函数名字前缀优先，
-// 无前缀时导出（顶层导出、导出面对象键、导出类方法）=公开，其余抽屉形态一律 f_。引用返回
-// 与顶层数组返回不追（不执行函数、不做数据流，如实声明）；导出面对象键
-//（export default {…} / export const x = {…}）是接口面，归 no-out-of-level-access。无豁免：
-// 初始化序列、未被引用的顶层方法同样要求 f_（未被引用另有无用代码规则表态）。
-// 注释对账（原 no-wrong-access-comment 并入）：方法定义紧邻注释出现级别标注（「私有：/内部：
-// /测试专用：/外部：」，行首形态含块注释 * 前缀）时，标注须与名字前缀及导出情况相符——
-// f_ 只允许「私有」、i_ 只允许「内部」、t_ 只允许「测试专用」、无前缀导出方法允许「内部/
-// 外部」。缺失不报（级别由使用方自行声明，本规则只对账已声明者）；标注不构成对导出面的
-// 级别检查。检查面是方法定义（类方法/对象属性/函数声明），注释取紧邻连续块（无空行间隔），
-// 正文偶然出现的级别词不构成标注。
+// 定义侧级别：未导出的顶层函数用 f_，导出绑定按调用范围声明 i_、t_ 或公开接口。
+// 测试侧允许 i_（同包测试协作）；t_ 是对外测试接口，必须命中 main/exports 导入入口。
+// 生产侧 i_ 与测试侧 i_ 的双向隔离、跨包 i_ 和 t_ 的生产消费由访问规则检查。
+// 非导出绑定不能使用 i_/t_；公开/t_ 具名导出需位于声明入口，根 ESLint 配置按宿主入口识别。
+// 返回对象的显式前缀须与句柄级别相符；测试内部句柄的 i_ 契约键可用于测试协作或模拟协议，
+// 对外 t_ 句柄不能泄露 i_ 成员。无前缀数据键随句柄，不参与级别核对。
+// 方法注释仅核对已有级别标注是否矛盾；默认导出无名容器与 CJS 声明面沿原有静态边界。
 import path from 'node:path';
 import { i_entryFacesOf, i_minimatch, i_projectRootOf } from '../lib/attributions.mjs';
 
@@ -49,7 +16,7 @@ const COMMENT_TAGS = { filePrivate: '私有', internal: '内部', testOnly: '测
 export default {
  meta: {
  type: 'problem',
- docs: { description: '非导出方法必须以 f_ 开头（文件私有）；非导出绑定不得使用 i_/t_ 级别前缀；测试文件导出面必须 t_；非入口面文件不得挂公开/t_ 具名导出（入口面核验）；函数返回对象树中显式前缀键的级别须与函数同级或为 f_，无前缀键随句柄不核级，测试文件 i_ 契约键放行（返回面相干·读法 B）' },
+ docs: { description: '非导出方法必须以 f_ 开头（文件私有）；非导出绑定不得使用 i_/t_ 级别前缀；测试文件内部导出用 i_，对外测试导出用 t_；非入口面文件不得挂公开/t_ 具名导出（入口面核验）；函数返回对象树中显式前缀键的级别须与函数同级或为 f_，无前缀键随句柄不核级，测试文件 i_ 契约键放行（返回面相干·读法 B）' },
  schema: [{
  type: 'object',
  properties: {
@@ -60,7 +27,7 @@ export default {
  messages: {
  notFilePrivate: "非导出方法 '{{name}}' 必须以 f_ 开头（文件私有）：不在导出面的方法一律 f_ 前缀",
  wrongLocalLevel: "非导出绑定 '{{name}}' 使用了级别前缀（{{prefix}}_）：非导出局部是文件私有的——函数须 f_，数据无须前缀（i_/t_ 只用于导出面）",
- testExportLevel: "测试文件导出 '{{name}}' 必须以 t_ 开头（测试专用级别）：测试协作接口一律 t_——无前缀导出即公开接口，生产引用即绕过 t_ 边界",
+ testExportLevel: "测试文件导出 '{{name}}' 必须以 i_（包内测试协作）或 t_（对外测试接口）开头，文件私有实现不得导出",
  publicExportOffFace: "非入口面文件的{{kind}}导出 '{{name}}'：公开/t_ 导出属于对外接口面（manifest main/exports 声明的文件），内部文件的导出面用 i_（包内协作）或收敛为模块内部实现",
  methodCommentConflict: "方法 '{{name}}' 注释标注「{{found}}」与访问级别「{{expected}}」矛盾（{{reason}}）",
  returnLevelExceed: "函数返回对象的成员 '{{name}}' 显式声明级别（{{memberLevel}}）与句柄受众（函数级别 {{fnLevel}}）不符：返回面经句柄流动，显式前缀键只能与函数同级或为 f_（无前缀键随句柄，不核级）",
@@ -96,23 +63,23 @@ export default {
  }
  }
 
- // 测试文件导出面只放行 t_：面名（exported 名）非 t_ 即报，与本地名、别名方向无关。
+ // 测试导出按面名区分 i_ 内部协作与 t_ 对外接口，不以本地别名绕过。
  function checkTestExport(idNode, surfaceName) {
- if (!isTestFile || surfaceName.startsWith('t_')) return;
+ if (!isTestFile || surfaceName.startsWith('i_') || surfaceName.startsWith('t_')) return;
  context.report({ node: idNode, messageId: 'testExportLevel', data: { name: surfaceName } });
  }
 
- // 入口面核验（增强）：非测试文件的公开/t_ 具名导出只能挂在对外导入面文件（manifest
+ // 入口面核验：公开及对外 t_ 具名导出只能挂在声明的 JS 导入入口（manifest
  // main/exports 目标）上；i_ 导出（包内协作）与 f_ 导出（filePrivateExport 另议）不在此列。
  // 无包锚（projectRootOf null）时跳过——谈 main/exports 面无从谈起。
  const projectRoot = i_projectRootOf(filename);
  const entryFaces = projectRoot === null ? null : i_entryFacesOf(projectRoot);
  const relativeRoot = projectRoot === null ? null : path.relative(projectRoot, filename).split(path.sep).join('/');
- const onImportFace = projectRoot !== null && !isTestFile
+ const onImportFace = projectRoot !== null
  && (entryFaces.importFaces.has(filename)
  || entryFaces.patterns.some((pattern) => i_minimatch(relativeRoot, pattern)));
  function checkFaceExport(idNode, surfaceName) {
- if (isTestFile || onImportFace) return;
+ if (onImportFace || isTestFile && !surfaceName.startsWith('t_')) return;
  if (surfaceName.startsWith('f_') || surfaceName.startsWith('i_')) return;
  const kind = surfaceName.startsWith('t_') ? ' t_': ' 公开';
  context.report({ node: idNode, messageId: 'publicExportOffFace', data: { name: surfaceName, kind } });
@@ -187,10 +154,8 @@ export default {
  const memberLevel = levelOfName(name);
  // 读法 B：无前缀键不是级别声明，受众由句柄封顶，不参与核级。
  if (memberLevel === '公开') return;
- // 测试文件里显式 i_ 键的唯一合法含义是 mock 实现生产契约：测试导出必须 t_、非导出绑定禁
- // i_，i_ 名只能落在成员键上，句柄（f_/匿名箭头）与契约键的错级即 mock 形态本身，放行；
- // t_ 键不放行（注入生产即越权消费）。
- if (isTestFile && memberLevel === 'i_') return;
+ // 测试内部句柄的 i_ 成员用于协作或 mock 协议；对外 t_ 句柄不能泄露包内成员。
+ if (isTestFile && memberLevel === 'i_' && fnLevel !== 't_') return;
  if (memberLevel === fnLevel || memberLevel === 'f_') return;
  context.report({
  node: keyNode,
