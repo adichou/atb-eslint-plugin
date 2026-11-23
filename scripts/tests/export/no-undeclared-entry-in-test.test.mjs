@@ -45,7 +45,7 @@ async function f_verify(dir, relFile, options = {}) {
 const UI = { uiTest: { startup: 'src/cli.mjs serve' } };
 
 /** 场景：bin 分区——驱动 bin 声明块目标放行；testDir 内基建互驱放行。 */
-test('valid：bin 分区 bin 目标与基建互驱放行', async () => {
+test('valid：bin 分区 bin 目标与基建互驱放行', async function test_valid_bin_分区_bin_目标与基建互驱放行() {
   const dir = f_fixture({
     'scripts/tests/bin/cmd.test.mjs': "import cp from 'node:child_process';\nconst c1 = cp.spawn('node', ['src/cli.mjs', 'serve']);\nconst c2 = cp.spawn('node', ['scripts/tests/helper.mjs']);\nexport const t_x = [c1, c2];\n",
   });
@@ -55,7 +55,7 @@ test('valid：bin 分区 bin 目标与基建互驱放行', async () => {
 });
 
 /** 场景：bin 分区——驱动非 bin 声明的实现文件报告。 */
-test('invalid：bin 分区非 bin 目标报告', async () => {
+test('invalid：bin 分区非 bin 目标报告', async function test_invalid_bin_分区非_bin_目标报告() {
   const dir = f_fixture({
     'scripts/tests/bin/cmd.test.mjs': "import cp from 'node:child_process'; const c = cp.spawn('node', ['src/internal.mjs']);\nexport const t_x = c;\n",
   });
@@ -68,7 +68,7 @@ test('invalid：bin 分区非 bin 目标报告', async () => {
 });
 
 /** 场景：export 分区——import 声明面文件放行；testDir 基建互导与裸包放行。 */
-test('valid：export 分区面内与互导放行', async () => {
+test('valid：export 分区面内与互导放行', async function test_valid_export_分区面内与互导放行() {
   const dir = f_fixture({
     'scripts/tests/export/api.test.mjs': "import { api } from '../../../src/api.mjs';\nimport { t_helper } from '../helper.mjs';\nimport path from 'node:path';\nexport const t_x = [api, t_helper, path];\n",
   });
@@ -78,7 +78,7 @@ test('valid：export 分区面内与互导放行', async () => {
 });
 
 /** 场景：export 分区——import 面外生产文件报告（声明面外无入口可测）。 */
-test('invalid：export 分区面外 import 报告', async () => {
+test('invalid：export 分区面外 import 报告', async function test_invalid_export_分区面外_import_报告() {
   const dir = f_fixture({
     'scripts/tests/export/api.test.mjs': "import { i_hidden } from '../../../src/internal.mjs';\nexport const t_x = i_hidden;\n",
   });
@@ -91,7 +91,7 @@ test('invalid：export 分区面外 import 报告', async () => {
 });
 
 /** 场景：ui 分区——驱动以 startup 声明（入口文件 + 参数）为前缀放行；不符报告。 */
-test('ui 分区驱动匹配', async () => {
+test('ui 分区驱动匹配', async function test_ui_分区驱动匹配() {
   const dir = f_fixture({
     'scripts/tests/ui/page-ok.test.mjs': "import cp from 'node:child_process'; import { chromium } from 'playwright'; const c = cp.spawn('node', ['src/cli.mjs', 'serve']); const browser = await chromium.launch(); const page = await browser.newPage(); await page.goto('http://127.0.0.1:8888/');\nexport const t_x = c;\n",
     'scripts/tests/ui/page-bad.test.mjs': "import cp from 'node:child_process'; const c = cp.spawn('node', ['src/internal.mjs', 'serve']);\nexport const t_x = c;\n",
@@ -105,7 +105,7 @@ test('ui 分区驱动匹配', async () => {
 });
 
 /** 场景：分区外兜底——不在 bin/export/ui 的测试文件报告；基建文件不受分区约束。 */
-test('分区外与基建豁免', async () => {
+test('分区外与基建豁免', async function test_分区外与基建豁免() {
   const dir = f_fixture({
     'scripts/tests/tasks/legacy.test.mjs': 'export const t_x = 1;\n',
     'scripts/tests/world.mjs': 'export const t_world = 1;\n',
@@ -119,7 +119,7 @@ test('分区外与基建豁免', async () => {
 });
 
 /** 场景：uiTest 自洽——启用但缺 startup 报配置错；startup 入口不在 bin 声明块报告。 */
-test('uiTest 自洽校验', async () => {
+test('uiTest 自洽校验', async function test_uiTest_自洽校验() {
   const dir = f_fixture({
     'scripts/tests/bin/cmd.test.mjs': 'export const t_x = 1;\n',
   });
@@ -134,7 +134,7 @@ test('uiTest 自洽校验', async () => {
 });
 
 /** 场景：uiTest.enabled=false——ui 分区不设区，ui/ 下测试按分区外报告。 */
-test('uiTest 关闭时 ui 分区不设', async () => {
+test('uiTest 关闭时 ui 分区不设', async function test_uiTest_关闭时_ui_分区不设() {
   const dir = f_fixture({
     'scripts/tests/ui/page.test.mjs': 'export const t_x = 1;\n',
   });
@@ -145,8 +145,22 @@ test('uiTest 关闭时 ui 分区不设', async () => {
   } finally { fs.t_unmock(); }
 });
 
+/** 场景：省略、显式 null 和 enabled=false 均关闭 UI 分区，错误类型仍由参数校验拒绝。 */
+test('uiTest 空值与关闭配置保持相同行为', async function test_uiTest_空值与关闭配置保持相同行为() {
+  const dir = f_fixture({ 'scripts/tests/ui/page.test.mjs': '' });
+  try {
+    for (const options of [{}, { uiTest: null }, { uiTest: { enabled: false } }]) {
+      const messages = await f_verify(dir, 'scripts/tests/ui/page.test.mjs', options);
+      assert.deepEqual(messages.map(message => message.messageId), ['testOutsidePartitions'], '未启用 UI 时应继续拒绝 UI 分区');
+    }
+    for (const uiTest of [false, '', []]) {
+      await assert.rejects(() => f_verify(dir, 'scripts/tests/ui/page.test.mjs', { uiTest }), /uiTest|object|null/, '非对象且非 null 的 UI 配置仍应拒绝');
+    }
+  } finally { fs.t_unmock(); }
+});
+
 /** 场景：spawn 目标静态不可解析——fail-loud 报告（防盲区绕行）。 */
-test('invalid：驱动目标不可解析报告', async () => {
+test('invalid：驱动目标不可解析报告', async function test_invalid_驱动目标不可解析报告() {
   const dir = f_fixture({
     'scripts/tests/bin/cmd.test.mjs': "import cp from 'node:child_process'; const target = chooseTarget();\nconst c = cp.spawn('node', target);\nexport const t_x = c;\n",
   });
@@ -159,7 +173,7 @@ test('invalid：驱动目标不可解析报告', async () => {
 
 /** 场景：跨分区误放——export 分区出现 spawn 驱动即报（batch-receipt 事故回归：
  * spawnSync 驱动 atb CLI 被误分到 export，规则因 export 分区不查 spawn 而漏报）。 */
-test('invalid：export 分区出现 spawn 驱动报告', async () => {
+test('invalid：export 分区出现 spawn 驱动报告', async function test_invalid_export_分区出现_spawn_驱动报告() {
   const dir = f_fixture({
     'scripts/tests/export/api.test.mjs': "import liteChildProcess from 'litenvi-node/lite-child_process.mjs'; const r = liteChildProcess.spawnSync('node', [f_ATB, 'batch', 'next']);\nexport const t_x = r;\n",
   });

@@ -35,7 +35,7 @@ const f_NO_ASSERT_GUARD = "import fs from 'node:fs';\nconst m = JSON.parse(fs.re
 const f_WRONG_FIELD_GUARD = "import assert from 'node:assert/strict';\nimport fs from 'node:fs';\nconst m = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));\nassert.equal(1, 1);\n";
 
 /** 场景：固定双配置守护齐——URL 构造与 import 说明符两种读取形态，字段断言齐备。 */
-test('valid：双配置守护齐放行', async () => {
+test('valid：双配置守护齐放行', async function test_valid_双配置守护齐放行() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -49,7 +49,7 @@ test('valid：双配置守护齐放行', async () => {
 });
 
 /** 场景：约定名在 testDir 深层递归定位（分区无关；深层守护文件相对路径按自身深度书写）。 */
-test('valid：约定名深层递归定位', async () => {
+test('valid：约定名深层递归定位', async function test_valid_约定名深层递归定位() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -63,7 +63,7 @@ test('valid：约定名深层递归定位', async () => {
 });
 
 /** 场景：packageJsonPath 定制——清单条目路径与约定守护名随之变化（manifest.json → manifest.test.mjs）。 */
-test('valid：packageJsonPath 定制守护名', async () => {
+test('valid：packageJsonPath 定制守护名', async function test_valid_packageJsonPath_定制守护名() {
   const dir = i_createFixture({
     'manifest.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -77,7 +77,7 @@ test('valid：packageJsonPath 定制守护名', async () => {
 });
 
 /** 场景：锚点外文件不受检（规则只挂在包根 eslint.config.mjs 上）。 */
-test('valid：锚点外文件不受检', async () => {
+test('valid：锚点外文件不受检', async function test_valid_锚点外文件不受检() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -90,7 +90,7 @@ test('valid：锚点外文件不受检', async () => {
 });
 
 /** 场景：守护测试文件不存在——按约定名报告缺守护（根配置守护在位，只缺清单守护）。 */
-test('invalid：缺守护测试文件报告', async () => {
+test('invalid：缺守护测试文件报告', async function test_invalid_缺守护测试文件报告() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -105,7 +105,7 @@ test('invalid：缺守护测试文件报告', async () => {
 });
 
 /** 场景：守护文件在但没有真实读取——纯提及/字面量对象不算读取证据。 */
-test('invalid：无真实读取报告', async () => {
+test('invalid：无真实读取报告', async function test_invalid_无真实读取报告() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -121,7 +121,7 @@ test('invalid：无真实读取报告', async () => {
 });
 
 /** 场景：有真实读取但没有任何断言——读取不配断言不算守护。 */
-test('invalid：有读取无断言报告', async () => {
+test('invalid：有读取无断言报告', async function test_invalid_有读取无断言报告() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -137,7 +137,7 @@ test('invalid：有读取无断言报告', async () => {
 });
 
 /** 场景：有断言但不含关键字段（读取了清单，断言只写无关等式）。 */
-test('invalid：断言不含关键字段报告', async () => {
+test('invalid：断言不含关键字段报告', async function test_invalid_断言不含关键字段报告() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -153,7 +153,7 @@ test('invalid：断言不含关键字段报告', async () => {
 });
 
 /** 场景：packageJsonPath 为绝对路径传入即抛（fail-loud，防配置错误静默失效）。 */
-test('invalid：绝对路径 packageJsonPath 抛错', async () => {
+test('invalid：绝对路径 packageJsonPath 抛错', async function test_invalid_绝对路径_packageJsonPath_抛错() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',
@@ -168,7 +168,7 @@ test('invalid：绝对路径 packageJsonPath 抛错', async () => {
 });
 
 /** 场景：绝对路径 testDir 传入即抛（家族 fail-loud 口径）。 */
-test('invalid：绝对路径 testDir 抛错', async () => {
+test('invalid：绝对路径 testDir 抛错', async function test_invalid_绝对路径_testDir_抛错() {
   const dir = i_createFixture({
     'package.json': f_MANIFEST,
     'eslint.config.mjs': 'export default [];\n',

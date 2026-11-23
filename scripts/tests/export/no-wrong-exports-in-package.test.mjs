@@ -26,7 +26,7 @@ async function f_lint(dir, options = {}) {
 }
 
 /** 场景：main/bin/exports 全部指向生产文件——放行。 */
-test('valid：入口面指向生产文件放行', async () => {
+test('valid：入口面指向生产文件放行', async function test_valid_入口面指向生产文件放行() {
   const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
@@ -44,7 +44,7 @@ test('valid：入口面指向生产文件放行', async () => {
 });
 
 /** 场景：manifest 无入口声明（纯库/应用无面）——放行。 */
-test('valid：无入口声明放行', async () => {
+test('valid：无入口声明放行', async function test_valid_无入口声明放行() {
   const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture' }),
     'src/a.mjs': 'export const x = 1;\n',
@@ -55,7 +55,7 @@ test('valid：无入口声明放行', async () => {
 });
 
 /** 场景：main 与 bin 指向测试文件（缺省 testDir='scripts/tests'）——各报一条。 */
-test('invalid：main 与 bin 指向测试文件报告', async () => {
+test('invalid：main 与 bin 指向测试文件报告', async function test_invalid_main_与_bin_指向测试文件报告() {
   const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
@@ -78,7 +78,7 @@ test('invalid：main 与 bin 指向测试文件报告', async () => {
 });
 
 /** 场景：exports 目标指向测试文件与 buildToolDir 文件——各报一条。 */
-test('invalid：exports 指向测试与构建工具文件报告', async () => {
+test('invalid：exports 指向测试与构建工具文件报告', async function test_invalid_exports_指向测试与构建工具文件报告() {
   const dir = i_createFixture({
     'package.json': JSON.stringify({
       name: 'fixture',
@@ -96,7 +96,7 @@ test('invalid：exports 指向测试与构建工具文件报告', async () => {
 });
 
 /** 场景：exports 通配模式可命中测试目录（探测文件匹配）——按模式报告。 */
-test('invalid：exports 通配模式命中测试目录报告', async () => {
+test('invalid：exports 通配模式命中测试目录报告', async function test_invalid_exports_通配模式命中测试目录报告() {
   const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', exports: { './*': './scripts/*' } }),
     'scripts/lib/a.mjs': 'export const x = 1;\n',
@@ -110,7 +110,7 @@ test('invalid：exports 通配模式命中测试目录报告', async () => {
 });
 
 /** 场景：自定义 testDir 后缺省目录不再命中——测试身份随 testDir 覆盖。 */
-test('valid：testDir 覆盖后缺省目录放行', async () => {
+test('valid：testDir 覆盖后缺省目录放行', async function test_valid_testDir_覆盖后缺省目录放行() {
   const dir = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', main: 'scripts/tests/legacy.mjs' }),
     'scripts/tests/legacy.mjs': 'export const x = 1;\n',
@@ -121,7 +121,7 @@ test('valid：testDir 覆盖后缺省目录放行', async () => {
 });
 
 /** 场景：前提约束 fail-loud——绝对路径 testDir 在 create 阶段抛错。 */
-test('invalid：绝对路径 testDir 抛错', async () => {
+test('invalid：绝对路径 testDir 抛错', async function test_invalid_绝对路径_testDir_抛错() {
   const dir = i_createFixture({ 'package.json': JSON.stringify({ name: 'fixture' }) });
   try {
     await assert.rejects(

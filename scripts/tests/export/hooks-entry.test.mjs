@@ -86,13 +86,13 @@ const f_CASES = [
 
 for (const scenario of f_CASES) {
   /** 场景：按实际 hook 声明检查 bin 命令调用或配置守护证据。 */
-  test(scenario.name, () => {
+  test(scenario.name, function test_hooks_entry_scenario_name() {
     assert.deepEqual(f_verify(scenario).map(message => message.id), scenario.expected, `${scenario.name}：诊断应匹配`);
   });
 }
 
 /** 场景：目录配置经公共工厂同时传到入口检查与配置守护，不改变默认未启用的行为。 */
-test('hooksDir 经工厂传给两个规则', () => {
+test('hooksDir 经工厂传给两个规则', function test_hooksDir_经工厂传给两个规则() {
   const config = createConfig({ hooksDir: 'agent-hooks' });
   for (const id of ['no-undeclared-entry-in-test', 'no-missing-config-tests']) {
     const block = config.find(item => item.rules?.[`atb/${id}`]);

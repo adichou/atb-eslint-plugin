@@ -1,10 +1,10 @@
 // 定义侧级别：未导出的顶层函数用 f_，导出绑定按调用范围声明 i_、t_ 或公开接口。
 // 测试侧允许 i_（同包测试协作）；t_ 是对外测试接口，必须命中 main/exports 导入入口。
 // 生产侧 i_ 与测试侧 i_ 的双向隔离、跨包 i_ 和 t_ 的生产消费由访问规则检查。
-// 非导出绑定不能使用 i_/t_；公开/t_ 具名导出需位于声明入口，根 ESLint 配置按宿主入口识别。
+// 非导出绑定不能使用 i_/t_；公开/t_ 导出需位于声明入口，默认导出、再导出与 CJS 同口径。
 // 返回对象的显式前缀须与句柄级别相符；测试内部句柄的 i_ 契约键可用于测试协作或模拟协议，
 // 对外 t_ 句柄不能泄露 i_ 成员。无前缀数据键随句柄，不参与级别核对。
-// 方法注释仅核对已有级别标注是否矛盾；默认导出无名容器与 CJS 声明面沿原有静态边界。
+// 方法注释仅核对已有级别标注是否矛盾；根 ESLint 配置继续按宿主入口识别。
 import path from 'node:path';
 import { i_entryFacesOf, i_minimatch, i_projectRootOf } from '../lib/attributions.mjs';
 
@@ -16,7 +16,7 @@ const COMMENT_TAGS = { filePrivate: '私有', internal: '内部', testOnly: '测
 export default {
  meta: {
  type: 'problem',
- docs: { description: '非导出方法必须以 f_ 开头（文件私有）；非导出绑定不得使用 i_/t_ 级别前缀；测试文件内部导出用 i_，对外测试导出用 t_；非入口面文件不得挂公开/t_ 具名导出（入口面核验）；函数返回对象树中显式前缀键的级别须与函数同级或为 f_，无前缀键随句柄不核级，测试文件 i_ 契约键放行（返回面相干·读法 B）' },
+ docs: { description: '非导出方法必须以 f_ 开头（文件私有）；非导出绑定不得使用 i_/t_ 级别前缀；测试文件内部导出用 i_，对外测试导出用 t_；公开导出（含 default、类、解构、再导出与 CommonJS）须位于声明入口，根 ESLint 配置保留宿主入口身份；函数返回对象树中显式前缀键的级别须与函数同级或为 f_，无前缀键随句柄不核级，测试文件 i_ 契约键放行（返回面相干·读法 B）' },
  schema: [{
  type: 'object',
  properties: {
@@ -69,7 +69,7 @@ export default {
  context.report({ node: idNode, messageId: 'testExportLevel', data: { name: surfaceName } });
  }
 
- // 入口面核验：公开及对外 t_ 具名导出只能挂在声明的 JS 导入入口（manifest
+ // 入口面核验：公开及对外 t_ 导出只能挂在声明的 JS 导入入口（manifest
  // main/exports 目标）上；i_ 导出（包内协作）与 f_ 导出（filePrivateExport 另议）不在此列。
  // 无包锚（projectRootOf null）时跳过——谈 main/exports 面无从谈起。
  const projectRoot = i_projectRootOf(filename);
@@ -83,6 +83,74 @@ export default {
  if (surfaceName.startsWith('f_') || surfaceName.startsWith('i_')) return;
  const kind = surfaceName.startsWith('t_') ? ' t_': ' 公开';
  context.report({ node: idNode, messageId: 'publicExportOffFace', data: { name: surfaceName, kind } });
+ }
+
+ // 所有导出形式共用同一入口，避免默认、解构或 CJS 绕过级别检查。
+ function f_checkExport(node, name) {
+ checkTestExport(node, name);
+ checkFaceExport(node, name);
+ }
+
+ // 解构的面名来自绑定标识符，不把对象的源属性名误当成导出名。
+ function f_bindingIdentifiers(pattern) {
+ if (!pattern) return [];
+ if (pattern.type === 'Identifier') return [pattern];
+ if (pattern.type === 'RestElement') return f_bindingIdentifiers(pattern.argument);
+ if (pattern.type === 'AssignmentPattern') return f_bindingIdentifiers(pattern.left);
+ if (pattern.type === 'ArrayPattern') return pattern.elements.flatMap(f_bindingIdentifiers);
+ if (pattern.type === 'ObjectPattern') return pattern.properties.flatMap(prop => f_bindingIdentifiers(prop.type === 'RestElement' ? prop.argument : prop.value));
+ return [];
+ }
+
+ // CJS 计算键仅求稳定字符串；循环常量和运行时表达式按未知面名处理，不执行源码。
+ function f_staticExportKey(node, seen = new Set()) {
+ if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+ if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis[0].value.cooked;
+ if (node.type === 'BinaryExpression' && node.operator === '+') {
+ const left = f_staticExportKey(node.left, seen), right = f_staticExportKey(node.right, seen);
+ return left !== null && right !== null ? left + right : null;
+ }
+ if (node.type !== 'Identifier') return null;
+ let scope = sourceCode.getScope(node);
+ while (scope) {
+ const binding = scope.set.get(node.name);
+ if (binding) {
+ const def = binding.defs[0];
+ if (seen.has(binding) || binding.references.some(ref => ref.isWrite() && !ref.init)
+ || def?.type !== 'Variable' || def.parent?.kind !== 'const' || !def.node.init) return null;
+ return f_staticExportKey(def.node.init, new Set([...seen, binding]));
+ }
+ scope = scope.upper;
+ }
+ return null;
+ }
+
+ function f_memberKey(node) {
+ return node.computed ? f_staticExportKey(node.property) : node.property.name;
+ }
+
+ // 只识别真实 CJS 全局；参数或局部变量名为 module/exports 时属于普通对象。
+ function f_isCjsGlobal(node, name) {
+ if (node.type !== 'Identifier' || node.name !== name) return false;
+ let scope = sourceCode.getScope(node);
+ while (scope) {
+ const binding = scope.set.get(name);
+ if (binding) return binding.defs.length === 0;
+ scope = scope.upper;
+ }
+ return true;
+ }
+
+ function f_cjsExport(left) {
+ if (left.type !== 'MemberExpression') return null;
+ const name = f_memberKey(left) ?? '*';
+ if (f_isCjsGlobal(left.object, 'exports')) return { name, node: left.property };
+ if (f_isCjsGlobal(left.object, 'module') && name === 'exports') return { name: 'default', node: left, whole: true };
+ const object = left.object;
+ if (object.type === 'MemberExpression' && f_isCjsGlobal(object.object, 'module') && f_memberKey(object) === 'exports') {
+ return { name, node: left.property };
+ }
+ return null;
  }
 
  // 顶层变量声明统一入口：函数值走 f_ 检查，任意值走级别前缀检查（导出者跳过）。
@@ -260,6 +328,16 @@ export default {
  }
 
  return {
+ AssignmentExpression(node) {
+ const face = f_cjsExport(node.left);
+ if (!face) return;
+ if (face.whole && node.right.type === 'ObjectExpression' && node.right.properties.length > 0) {
+ for (const prop of node.right.properties) {
+ const name = prop.type === 'SpreadElement' ? '*' : (prop.computed ? f_staticExportKey(prop.key) : keyName(prop.key));
+ f_checkExport(prop.type === 'SpreadElement' ? prop : prop.key, name ?? '*');
+ }
+ } else f_checkExport(face.node, face.name);
+ },
  MethodDefinition: checkDefinitionComment,
  Property: checkDefinitionComment,
  PropertyDefinition: checkDefinitionComment,
@@ -268,29 +346,34 @@ export default {
  // 导出名单：export 列表（无 source）把既有顶层绑定挂入导出面。
  const exportedNames = new Set();
  for (const stmt of programNode.body) {
+ if (stmt.type === 'ExportDefaultDeclaration' && stmt.declaration.type === 'Identifier') exportedNames.add(stmt.declaration.name);
  if (stmt.type === 'ExportNamedDeclaration' && !stmt.source) {
  for (const spec of stmt.specifiers) exportedNames.add(spec.local.name);
  }
  }
  const isExported = (name) => exportedNames.has(name);
  for (const stmt of programNode.body) {
+ if (stmt.type === 'ExportDefaultDeclaration') {
+ f_checkExport(stmt, 'default');
+ continue;
+ }
+ if (stmt.type === 'ExportAllDeclaration') {
+ f_checkExport(stmt.exported || stmt, stmt.exported?.name ?? stmt.exported?.value ?? '*');
+ continue;
+ }
  if (stmt.type === 'FunctionDeclaration' && stmt.id) {
  checkBinding(stmt.id, stmt.id.name, isExported(stmt.id.name));
  continue;
  }
  if (stmt.type === 'ExportNamedDeclaration' && stmt.declaration) {
  const decl = stmt.declaration;
- if (decl.type === 'FunctionDeclaration' && decl.id) {
- checkBinding(decl.id, decl.id.name, true);
- checkTestExport(decl.id, decl.id.name);
- checkFaceExport(decl.id, decl.id.name);
+ if ((decl.type === 'FunctionDeclaration' || decl.type === 'ClassDeclaration') && decl.id) {
+ if (decl.type === 'FunctionDeclaration') checkBinding(decl.id, decl.id.name, true);
+ f_checkExport(decl.id, decl.id.name);
  } else if (decl.type === 'VariableDeclaration') {
  for (const declarator of decl.declarations) {
  checkDeclarator(declarator, true);
- if (declarator.id.type === 'Identifier') {
- checkTestExport(declarator.id, declarator.id.name);
- checkFaceExport(declarator.id, declarator.id.name);
- }
+ for (const id of f_bindingIdentifiers(declarator.id)) f_checkExport(id, id.name);
  }
  }
  continue;
@@ -299,8 +382,7 @@ export default {
  if (stmt.type === 'ExportNamedDeclaration') {
  for (const spec of stmt.specifiers) {
  const surfaceName = spec.exported.name ?? String(spec.exported.value ?? spec.local.name);
- checkTestExport(spec.exported, surfaceName);
- checkFaceExport(spec.exported, surfaceName);
+ f_checkExport(spec.exported, surfaceName);
  }
  continue;
  }

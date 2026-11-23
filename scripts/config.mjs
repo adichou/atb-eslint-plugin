@@ -23,11 +23,11 @@
 // - libDir（缺省 'scripts/lib'）：内部库目录——lib 单向分层的管辖面。
 // - depsDir（缺省 'node_modules'）：依赖目录——全局忽略第一层。
 // - buildToolDir（缺省 ''）：构建工具目录——构建期/开发期辅助支撑代码的角色目录，devDependencies
-//   对它开放（依赖三级链块同名桥接）；未声明时不桥接。
+//   对它开放（依赖三级链块同名桥接）；空字符串表示不启用。
 // - packageJsonPath（缺省 'package.json'）：package.json 面规则的文件目标（相对项目根）。
 // - hooksDir（缺省 ''，不启用）：AI Agent 的 hook JSON 目录（相对项目根，递归扫描）。命令文件
 //   加入 bin 测试入口，JSON 配置加入 no-missing-config-tests 的读取与字段断言守护。
-// - uiTest（缺省 null 不传）：UI 分区接线——{ enabled（缺省 true）, startup, index（缺省 /） }
+// - uiTest（缺省 null，关闭）：UI 分区接线——{ enabled（缺省 true）, startup, index（缺省 /） }
 //   启动命令为「入口文件 + 参数」词序列，入口文件须在 bin 中声明；UI 用例还须导航到
 //   http://127.0.0.1:{port}/{index}，端口可动态，首页 index 缺省 /。
 // - deniedModules（缺省环境组）：在统一原生环境禁令上追加的模块黑名单，不可清空原生环境组。
@@ -98,18 +98,6 @@ export function createConfig({
       'atb/no-silent-catch': 'error',
     },
   },
-  // ---------- 禁止未在 package.json 中声明的依赖导入 ----------
-  // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）。testDir 同名桥接
-  //（测试代码 = devDependencies 合法受众），buildToolDir 同名透传（构建工具目录，未声明不
-  // 桥接）；根配置 eslint.config.mjs 由规则内置识别为开发代码（不经参数，未声明依赖照抓）；
-  // 本块不设 ignores，不支持忽略。
-  {
-    files: jsGlobs,
-    languageOptions: { ...jsLanguage },
-    rules: {
-      'atb/no-undeclared-dependencies-imports': ['error', { testDir, buildToolDir }],
-    },
-  },
   // ---------- 禁止无用代码：无用导出，无用私有代码和无用导入
   {
     files: jsGlobs,
@@ -134,12 +122,40 @@ export function createConfig({
       'atb/no-loose-dependency-specs': 'error',
     },
   },
+  // ---------- 禁止未在 package.json 中声明的依赖导入 ----------
+  // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）。testDir 同名桥接
+  //（测试代码 = devDependencies 合法受众），buildToolDir 同名透传（构建工具目录，空字符串
+  // 表示不启用）；根配置 eslint.config.mjs 由规则内置识别为开发代码（不经参数，未声明依赖照抓）；
+  // 本块不设 ignores，不支持忽略。
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-undeclared-dependencies-imports': ['error', { testDir, buildToolDir }],
+    },
+  },
+  // ---------- 禁止导入黑名单模块 --------
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-blacklist-module-imports': ['error', { deniedModules }],
+    },
+  },
+  // ----禁止循环导入（项目根自锚定建图，无路径参数与豁免：根配置同样受检） ----
+  {
+    files: jsGlobs,
+    languageOptions: { ...jsLanguage },
+    rules: {
+      'atb/no-import-cycles': 'error',
+    },
+  },
   // ---------- 禁止内部库反向导入业务代码 ----------
   {
     files: f_jsFilesUnder(libDir),
     languageOptions: { ...jsLanguage },
     rules: {
-      'atb/no-reverse-imports-in-lib': ['error', { libDir }],
+      'atb/no-business-imports-in-lib': ['error', { libDir }],
     },
   },
   // ----- 禁止错误的访问级别和注释：非导出方法必须 f_，测试文件导出面必须 t_  --------
@@ -152,8 +168,6 @@ export function createConfig({
   },
 
   // ----禁止越级访问------
-  // 规则自锚定项目根（受检文件向上找最近 package.json，无需 scanPath）；testDir 与分级块
-  // 同名透传。
   {
     files: jsGlobs,
     languageOptions: { ...jsLanguage },
@@ -162,15 +176,19 @@ export function createConfig({
     },
   },
 
-  // ----禁止循环导入（项目根自锚定建图，无路径参数与豁免：根配置同样受检） ----
+  /**
+   * ------- 测试代码规则块 ---------
+  */
+  
+  // ---- 禁止配置文件无测试：关键配置文件必须有「真实读取 + 关键字段断言」的守护测试 ----
+  // 目前支持 eslint.config.mjs（内置常量）和 package.json（缺省路径）双配置守护，hooksDir 下的 JSON 配置也会被守护；守护测试按约定命名（package.test.mjs / eslint.config.test.mjs）在 testDir 内定位，须真实读取并断言关键字段。
   {
-    files: jsGlobs,
+    files: ['eslint.config.mjs'],
     languageOptions: { ...jsLanguage },
     rules: {
-      'atb/no-import-cycles': 'error',
+      'atb/no-missing-config-tests': ['error', { testDir, packageJsonPath, hooksDir }],
     },
   },
-
   // -- 禁止不从公开定义的入口进行测试：bin/export/ui/config 分别绑定命令、公开 API、页面和配置证据 ----
   // bin：驱动目标 ∈ package.json bin 或 hooksDir 命令声明；export：import ∈ exports/main 声明面；
   // ui（按 uiTest 启用）：驱动匹配 uiTest.startup 命令（入口文件 ∈ bin）。testDir 同名桥接；
@@ -179,53 +197,30 @@ export function createConfig({
     files: f_jsFilesUnder(testDir),
     languageOptions: { ...jsLanguage },
     rules: {
-      'atb/no-undeclared-entry-in-test': ['error', { testDir, ...(packageJsonPath !== 'package.json' ? { packageJsonPath } : {}), ...(hooksDir ? { hooksDir } : {}), ...(uiTest ? { uiTest } : {}) }],
+      'atb/no-undeclared-entry-in-test': ['error', { testDir, packageJsonPath, hooksDir, uiTest }],
     },
   },
-  // 模块黑名单统一入口：生产、测试与工具代码均受检，仅内置 litenvi-node 的必要原生底层。
-  {
-    files: jsGlobs,
-    languageOptions: { ...jsLanguage },
-    rules: {
-      'atb/no-blacklist-module-imports': ['error', { deniedModules }],
-    },
-  },
-  // ---- 禁止配置文件无测试：关键配置文件必须有「真实读取 + 关键字段断言」的守护测试 ----
-  // 锚点为根配置 eslint.config.mjs（家族内置常量，无需 JSON parser——挂在可选 parser 上的
-  // 规则在未接线时静默失效，违背 fail-loud）：自锚定包根，守护对象为固定双配置——根配置与
-  // packageJsonPath 清单（同名桥接，缺省 package.json），另追加 hooksDir JSON。守护测试按约定命名（package.test.mjs
-  // / eslint.config.test.mjs）在 testDir 内递归定位，且须静态可解地真实读取该配置（import
-  // 说明符 / new URL(import.meta.url) / path.join 构造）并断言关键字段（node:assert 绑定归因）
-  // ——配置是行为面，改动须经测试覆盖。
-  {
-    files: ['eslint.config.mjs'],
-    languageOptions: { ...jsLanguage },
-    rules: {
-      'atb/no-missing-config-tests': ['error', { testDir, packageJsonPath, ...(hooksDir ? { hooksDir } : {}) }],
-    },
-  },
-  // -- 禁止 litenvi 在测试用例中不 mock（t_mock/t_install 装配与 t_unmock 复位配对） ----------
+  // ----- 禁止编写不合规范的测试用例 ----------
   {
     files: f_jsFilesUnder(testDir),
     languageOptions: { ...jsLanguage },
     rules: {
+      'atb/no-skip-test-exectution': 'error',
+      'atb/no-invalid-test-definition': 'error',
+      'atb/no-missing-test-comment': 'error',
+      'atb/no-invalid-test-assertions': 'error',
+      'atb/no-unawaited-test-operations': 'error',
+      'atb/no-fixed-sleep-in-test': 'error',
+      'atb/no-business-replacement-in-test': ['error', { testDir }],
+      'atb/no-test-case-imports-in-test': ['error', { testDir }],
+      'atb/no-observation-data-write-in-test': ['error', { testDir }],
+      'atb/no-fake-page-interactions-in-test': 'error',
+      'atb/no-unreset-onRun-hooks-in-test': ['error', { testDir }],
+      'atb/no-unrestored-process-state-in-test': ['error', { testDir }],
+      'atb/no-uncleanup-injection-in-test': 'error',
       'atb/no-unmocked-litenvi-in-test': 'error',
     },
   },
-  // ---------- 模块与黑盒边界：不提供文件例外，沿已声明布局检查 ----------
-  {
-    files: jsGlobs,
-    languageOptions: { ...jsLanguage },
-    rules: { 'atb/no-boundary-violations-in-test': ['error', { testDir, libDir, ...(hooksDir ? { hooksDir } : {}) }] },
-  },
-  // ---------- 测试质量：由 files 统一决定范围，不提供文件例外 ----------
-  {
-    files: f_jsFilesUnder(testDir),
-    languageOptions: { ...jsLanguage },
-    rules: { 'atb/no-bad-patterns-in-test': 'error' },
-  },
-
-
   ];
 }
 

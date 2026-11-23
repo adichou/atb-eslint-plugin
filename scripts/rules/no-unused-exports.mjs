@@ -1,7 +1,7 @@
 // 死导出按实际受众检查：声明的 JS 导入入口允许公开/t_ 由包外消费，但 i_ 必须有包内消费者。
 // 未发布的模块（含测试 helper）检查全部具名导出；bin 直驱与整模块消费沿原有保守边界。
 // f_ 导出交由访问规则报告。消费图为静态文本扫描与进程级缓存，不执行模块。
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
+import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
 import { i_entryFacesOf, i_minimatch, i_projectRootOf } from '../lib/attributions.mjs';
 

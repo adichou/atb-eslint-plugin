@@ -115,13 +115,13 @@ const f_CASES = [
 
 for (const scenario of f_CASES) {
   /** 场景：按文件核验声明入口的存在性与真实调用来源，包含 helper、动态端口和错误输入。 */
-  test(scenario.name, async () => {
+  test(scenario.name, async function test_required_test_entry_scenario_name() {
     const actual = await f_check(scenario);
     assert.deepEqual(actual, scenario.expected, `${scenario.name}：诊断应精确匹配入口条件`);
   });
 }
 
 /** 场景：测试入口也不再接受项目可配置的原生模块例外。 */
-test('入口规则拒绝旧例外参数', async () => {
+test('入口规则拒绝旧例外参数', async function test_入口规则拒绝旧例外参数() {
   await assert.rejects(f_check({ partition: 'export', code: f_NATIVE_REFERENCE, ruleOptions: { exceptionFilesAllowModules: [] } }), /additional|unexpected|exceptionFilesAllowModules/, '删除的例外参数必须明确拒绝');
 });

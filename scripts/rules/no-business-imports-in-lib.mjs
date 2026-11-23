@@ -1,4 +1,4 @@
-// 禁止内部库反向导入业务：静态/动态导入、再导出和已识别的 require 共用实际路径判定。
+// 禁止内部库导入库外业务代码：静态/动态导入、再导出和已识别的 require 共用实际路径判定。
 // 只解析常量、标准 URL/path 构造与已识别的加载器；运行时路径和未知解析基准明确报告。
 // 不执行源码，不推断任意工厂返回值；第三方包声明由清单确定，不递归审查依赖包内部。
 import path from 'node:path';
@@ -35,7 +35,7 @@ function f_importAlias(imports, specifier, mode) {
 export default {
   meta: {
     type: 'problem',
-    docs: { description: '禁止内部库反向导入库外业务；允许库内模块、Node 内置与运行依赖，未知目标明确报告' },
+    docs: { description: '禁止内部库导入库外业务代码；允许库内模块、Node 内置与运行依赖，未知目标明确报告' },
     schema: [{ type: 'object', properties: { libDir: { type: 'string', minLength: 1 } }, additionalProperties: false }],
     messages: {
       outsideLib: "内部库不能加载库外本地模块 '{{target}}'；请下沉共同实现或经参数注入",

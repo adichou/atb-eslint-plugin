@@ -35,7 +35,7 @@ const f_CASES = [
 ];
 for (const scenario of f_CASES) {
   /** 场景：config 用例按实际配置读取与断言数据来源判定。 */
-  test(scenario.name, () => {
+  test(scenario.name, function test_config_partition_scenario_name() {
     assert.deepEqual(f_check(scenario.code, scenario.filename), scenario.expected, `${scenario.name}：应按配置证据判定`);
   });
 }

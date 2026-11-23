@@ -415,7 +415,7 @@ tester.run('no-out-of-level-access', outOfLevelAccess, {
 });
 
 // 前提约束（fail-loud）：testDir 不支持绝对路径——传入即抛，防运行目录漂移静默失效。
-it('no-out-of-level-access 绝对路径 testDir 抛错', () => {
+it('no-out-of-level-access 绝对路径 testDir 抛错', function test_no_out_of_level_access_绝对路径_testDir_抛错() {
   assert.throws(
     () => outOfLevelAccess.create({
       options: [{ testDir: '/absolute/tests' }],

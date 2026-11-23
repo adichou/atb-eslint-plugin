@@ -10,7 +10,7 @@
 // 本规则运行在 package.json 上（经 JSON parser 接线，如 eslint-plugin-package-json），
 // 报告落在清单 Program 节点；扫描结果进程级缓存（包根为键，与家族缓存惯例一致）。
 import path from 'node:path';
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
+import fs from 'litenvi-node/lite-fs.mjs';
 import { i_packageNameOf } from '../lib/attributions.mjs';
 
 const JS_EXT = /\.(?:js|mjs|cjs)$/;

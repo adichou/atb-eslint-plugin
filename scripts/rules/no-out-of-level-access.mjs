@@ -1,34 +1,14 @@
-// 接口访问边界：f_ 仅定义文件；i_ 仅同包同侧协作；t_ 仅测试代码可消费。
+// 先检查模块加载：跨包路径禁止，生产文件不能加载测试目录；再检查 f_/i_/t_ 接口。
 // 生产侧与测试侧各自可以定义 i_，两侧不能互相访问；跨包 i_ 同样禁止。
 // 提供方身份按真实模块位置识别，支持本地/包自引用/file URL、软链接、别名与模块成员。
 // 依赖包的 f_ 仍由其所属项目解释；Node 内置模块不套用项目 i_ 契约。
 // 测试侧导出声明由 no-wrong-access-level 核验，避免同面重复报告。
 // 不执行被调模块、不推断任意返回数据类型；动态来源不可确定时沿现有归因边界停止。
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
-import { i_evaluateStaticString, i_packageNameOf, i_projectRootOf, i_repoRelative } from '../lib/attributions.mjs';
+import { i_evaluateStaticString, i_projectRootOf } from '../lib/attributions.mjs';
+import { i_moduleAccess } from '../lib/module-access.mjs';
 
 const DEFAULT_TEST_DIR = 'scripts/tests';
-// 私有：清单缺失或无效时不推断包名自引用，其他本地路径仍可独立判定。
-function f_manifest(root) {
- try { return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); }
- catch { return {}; }
-}
-
-// 私有：从包自引用的 exports 条件或数组中取得声明的本地目标，不执行模块解析。
-function f_exportTarget(value) {
- if (typeof value === 'string') return value;
- if (Array.isArray(value)) return value.map(f_exportTarget).find(Boolean);
- if (value && typeof value === 'object') {
- for (const condition of ['node', 'import', 'require', 'default']) {
- const target = f_exportTarget(value[condition]);
- if (target) return target;
- }
- }
- return null;
-}
-
 function f_classify(name) {
  if (name.startsWith('f_')) return 'filePrivate';
  if (name.startsWith('i_')) return 'internal';
@@ -39,7 +19,7 @@ function f_classify(name) {
 export default {
  meta: {
  type: 'problem',
- docs: { description: 'f_/i_/t_ 前缀接口的越级访问：当前项目跨文件与测试/生产级别混淆的归因；依赖包与 node: 的 t_ 名（测试专用）生产禁用' },
+ docs: { description: '模块加载先于接口权限：禁止跨包文件路径引用、生产代码加载测试模块，再检查 f_ 跨文件、i_ 跨侧/跨包与 t_ 生产消费；测试文件互相依赖由边界规则检查' },
  schema: [{
  type: 'object',
  properties: {
@@ -48,6 +28,9 @@ export default {
  additionalProperties: false,
  }],
  messages: {
+ crossPackagePath: "跨包文件路径引用 '{{target}}' 被禁止；请通过对方包名与公开入口加载",
+ productionDependsOnTests: "生产文件 {{file}} 不能加载测试模块 '{{target}}'",
+ unresolvedModuleTarget: '无法静态确定模块加载目标或解析基准，不能确认包与测试边界；请使用明确的模块来源',
  externalInternalAccess: "'{{name}}' 是包内接口（i_），不能跨包导入或访问",
  productionTestInternalAccess: "'{{name}}' 是测试侧的包内接口（i_），生产文件 {{file}} 禁止导入或访问",
 
@@ -78,50 +61,21 @@ export default {
  const testDir = path.resolve(cwd, testDirInput);
  const isTestFile = !path.relative(testDir, filename).split(path.sep).join('/').startsWith('../');
  const sourceCode = context.sourceCode || context.getSourceCode();
- const manifest = f_manifest(projectRoot);
+ const f_moduleAccess = i_moduleAccess(context, { testDir: testDirInput, testing: isTestFile });
+ const sourceOf = f_moduleAccess.sourceOf;
 
- // 来源同时记录包归属和测试角色；外部模块不读取实现，按 i_/t_ 契约限制消费。
- function sourceOf(specifier) {
- let target;
- if (specifier.startsWith('file:')) {
- try { target = fileURLToPath(specifier); } catch { return { f_specifier: specifier, f_external: true }; }
- } else if (specifier.startsWith('.') || path.isAbsolute(specifier)) {
- target = path.resolve(path.dirname(filename), specifier);
- } else if (manifest.name && i_packageNameOf(specifier) === manifest.name) {
- const subpath = specifier.slice(manifest.name.length).replace(/^\//, '');
- const key = subpath ? `./${subpath}` : '.';
- const exports = manifest.exports;
- let exported = key === '.' ? f_exportTarget(exports) : null;
- if (exports && typeof exports === 'object') {
- exported = f_exportTarget(exports[key]) || exported;
- if (!exported) {
- for (const pattern of Object.keys(exports)) {
- if (!pattern.includes('*')) continue;
- const [prefix, suffix] = pattern.split('*');
- if (!key.startsWith(prefix) || !key.endsWith(suffix) || key.length < prefix.length + suffix.length) continue;
- const template = f_exportTarget(exports[pattern]);
- if (template) exported = template.replaceAll('*', key.slice(prefix.length, key.length - suffix.length));
- if (exported) break;
+ // 模块错误只在加载处报告，接口归因保留错误标记以避免后续成员重复报错。
+ function f_checkModule(node, source) {
+ if (!source.f_error || source.f_error === 'unresolvedModuleTarget') return;
+ context.report({ node, messageId: source.f_error, data: { target: source.f_target || source.f_specifier, file: relative } });
  }
- }
- }
- target = path.resolve(projectRoot, exported || subpath || manifest.main || 'index.js');
- } else return { f_specifier: specifier, f_external: true };
- const relativeTarget = i_repoRelative(target, projectRoot);
- const providerRoot = relativeTarget === null ? null : i_projectRootOf(path.resolve(projectRoot, relativeTarget));
- const external = relativeTarget === null || relativeTarget.split('/').includes('node_modules')
- || providerRoot !== null && i_repoRelative(providerRoot, projectRoot) !== '';
- return { f_specifier: specifier, f_external: external, f_module: relativeTarget, f_test: i_repoRelative(target, testDir) !== null, f_member: '' };
- }
-
 
  // 模块绑定登记：变量绑定 → 来源模块与导出成员路径。
  const moduleBindings = new Map();
- // 加载函数变量（createRequire 结果 / require 别名）与其解析基准
- const loaderBindings = new Map();
  // 模块对象和接口来源的派生绑定，支持解构、转存和同文件参数转传。
  const derivedBindings = new Map();
  function reportAccess(node, name, source) {
+ if (source?.f_error) return false;
  const kind = f_classify(name);
  if (!kind) return false;
  // 外部包 i_ 禁止消费；t_ 只允许测试调用。Node 内置模块不套用项目 i_ 命名契约。
@@ -171,20 +125,8 @@ export default {
  }
  case 'ChainExpression':
  return resolveBaseExpression(expr.expression);
- case 'CallExpression': {
- // require / createRequire 别名加载与全局 require 直调的返回值即来源模块。
- // 配置声明的 require 全局经 eslint 作用域表现为无定义绑定（defs 为空），同样按加载器识别。
- if (expr.callee.type === 'Identifier') {
- const scope = sourceCode.getScope(expr.callee);
- const binding = scope.references.find((r) => r.identifier === expr.callee)?.resolved || null;
- const isGlobalRequire = expr.callee.name === 'require' && (!binding || binding.defs.length === 0);
- const isLoaderCall = (binding && loaderBindings.has(binding)) || isGlobalRequire;
- if (isLoaderCall) return resolveLoadTarget(expr.arguments[0]);
- }
- // 普通调用返回数据不继承接口身份（不执行被调函数、不推断返回值）：级别随名字走，
- // 测试专用接口以 t_ 命名，直接导入与模块对象访问即被拦。
- return null;
- }
+ case 'CallExpression':
+ return f_moduleAccess.call(expr)?.source || null;
  case 'AwaitExpression':
  case 'YieldExpression':
  return resolveBaseExpression(expr.argument);
@@ -201,9 +143,7 @@ export default {
 
  // 加载目标解析：字面量/无插值模板/可解析常量 → 说明符归因；无法解析返回 null 并停止归因。
  function resolveLoadTarget(arg) {
- const evaluated = i_evaluateStaticString(arg, sourceCode);
- if (!evaluated.resolved) return null;
- return sourceOf(evaluated.value);
+ return f_moduleAccess.argument(arg);
  }
 
  // 解构属性登记：ObjectPattern 内静态键建立派生归因；silent 用于预扫描只登记不报告。
@@ -376,6 +316,7 @@ export default {
  ImportDeclaration(node) {
  registerImportDeclaration(node);
  const source = sourceOf(node.source.value);
+ f_checkModule(node.source, source);
  // 按原导出名和真实提供方检查，改名不改变 i_/t_ 权限。
  for (const spec of node.specifiers) {
  if (spec.type !== 'ImportSpecifier') continue;
@@ -387,6 +328,7 @@ export default {
  ExportNamedDeclaration(node) {
  if (node.source) {
  const source = sourceOf(node.source.value);
+ f_checkModule(node.source, source);
  for (const spec of node.specifiers) {
  const exportedName = spec.local.name;
  const surfaceName = spec.exported.name ?? String(spec.exported.value ?? exportedName);
@@ -439,38 +381,24 @@ export default {
  }
  },
 
+ ExportAllDeclaration(node) {
+ f_checkModule(node.source, sourceOf(node.source.value));
+ },
+
+ ImportExpression(node) {
+ f_checkModule(node.source, resolveLoadTarget(node.source));
+ },
+
  VariableDeclarator(node) {
  attributeDeclarator(node);
- // 加载函数登记：createRequire(...) 结果与 require 别名（不按变量名认定身份）
- if (node.init && node.id.type === 'Identifier') {
- const init = node.init;
- if (init.type === 'CallExpression' && init.callee.type === 'Identifier') {
- // createRequire 按绑定识别（支持改名导入），不按局部函数名认定身份
- const calleeScope = sourceCode.getScope(init.callee);
- const calleeBinding = calleeScope.references.find((r) => r.identifier === init.callee)?.resolved || null;
- const importedName = calleeBinding && calleeBinding.defs.length > 0 && calleeBinding.defs[0].type === 'ImportBinding'
- ? (calleeBinding.defs[0].node.imported ? calleeBinding.defs[0].node.imported.name: calleeBinding.defs[0].node.local.name)
- : null;
- if (init.callee.name === 'createRequire' || importedName === 'createRequire') {
- const scope = sourceCode.getScope(node.id);
- loaderBindings.set(scope.set.get(node.id.name), { base: 'createRequire' });
- return;
- }
- }
- if (init.type === 'Identifier') {
- const scope = sourceCode.getScope(init);
- const binding = scope.references.find((r) => r.identifier === init)?.resolved || null;
- // 别名转传：既有 loader 再别名，或全局 require 本身转传（const load = require）
- const isLoaderAlias = (binding && loaderBindings.has(binding)) || (!binding && init.name === 'require');
- if (isLoaderAlias) {
- const ownScope = sourceCode.getScope(node.id);
- loaderBindings.set(ownScope.set.get(node.id.name), { base: binding || 'globalRequire' });
- }
- }
- }
  },
 
  CallExpression(node) {
+ const load = f_moduleAccess.call(node);
+ if (load) {
+ f_checkModule(load.node, load.source);
+ return;
+ }
  // 转调包装：同文件内以接口对象实参调用的函数，其对应形参在函数体内按来源归因
  attributeCallArguments(node);
  const callee = node.callee;

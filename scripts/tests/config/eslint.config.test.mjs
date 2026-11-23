@@ -12,7 +12,7 @@ import rootConfig from '../../../eslint.config.mjs';
 const REAL_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** 场景：根配置组合形态——必须经公共工厂组合规则集，JSON parser 接线在位。 */
-test('valid：根配置锚定工厂组合', () => {
+test('valid：根配置锚定工厂组合', function test_valid_根配置锚定工厂组合() {
   fs.t_mock({ exclude: [REAL_ROOT] });
   try {
     const text = fs.readFileSync(new URL('../../../eslint.config.mjs', import.meta.url), 'utf8');
@@ -22,7 +22,7 @@ test('valid：根配置锚定工厂组合', () => {
 });
 
 /** 场景：工厂产出关键字段——plugins 注册块与 rules 块在位。 */
-test('valid：工厂产出 plugins 与 rules 块', () => {
+test('valid：工厂产出 plugins 与 rules 块', function test_valid_工厂产出_plugins_与_rules_块() {
   const config = rootConfig;
   assert.ok(config.some((block) => block.plugins && block.plugins.atb), 'plugins.atb 注册块在位');
   assert.ok(config.some((block) => block.rules && Object.keys(block.rules).length > 0), 'rules 块在位');

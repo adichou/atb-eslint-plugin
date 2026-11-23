@@ -18,7 +18,7 @@
 // 不接线本规则。存在才要求：packageJsonPath 指向的清单在仓库中不存在时不设该条要求。
 // testDir 与 packageJsonPath 均为相对路径，绝对传入即抛（fail-loud，防配置错误静默失效）。
 import path from 'node:path';
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
+import fs from 'litenvi-node/lite-fs.mjs';
 import { i_projectRootOf } from '../lib/attributions.mjs';
 import { i_configEntries, i_configTestName, i_configTestEvidence } from '../lib/config-test-analysis.mjs';
 

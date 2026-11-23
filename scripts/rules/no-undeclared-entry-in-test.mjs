@@ -33,7 +33,7 @@ export default {
         hooksDir: { type: 'string' },
         packageJsonPath: { type: 'string' },
         uiTest: {
-          type: 'object',
+          type: ['object', 'null'],
           properties: { enabled: { type: 'boolean' }, startup: { type: 'string' }, index: { type: 'string' } },
           additionalProperties: false,
         },

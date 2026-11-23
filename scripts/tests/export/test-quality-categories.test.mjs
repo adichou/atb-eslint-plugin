@@ -1,22 +1,22 @@
-// 使用真实 RuleTester 验证 API 归因与质量约束；受检字符串不是测试自身执行的代码。
-import { describe, it } from 'node:test';
-import { RuleTester } from 'eslint';
-import rule from 'atb-eslint-plugin/rules/no-bad-patterns-in-test.mjs';
-RuleTester.describe = describe; RuleTester.it = it;
-const tester = new RuleTester({ languageOptions: { ecmaVersion: 'latest', sourceType: 'module' } });
+// 同时运行拆分后的真实规则，保留原质量检查正反例及完整诊断集合。
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Linter } from 'eslint';
+import plugin from 'atb-eslint-plugin';
+import { i_qualitySettings, i_MESSAGE_RULES } from '../rule-groups.mjs';
 const f_case = (scenario, body, title = '示例用例') =>
   [
     "import { test } from 'node:test';",
     "import assert from 'node:assert/strict';",
     '',
     `// 场景：${scenario}`,
-    `test('${title}', () => {`,
+    `test('${title}', function test_示例用例() {`,
     `  // 输入：构造${scenario}的调用`,
     body,
     '});',
   ].join('\n') + '\n';
 
-tester.run('no-bad-patterns-in-test', rule, {
+const f_CASES = {
 valid: [
 { name: "常规断言路径不误报", code: f_case('常规断言路径', "  const value = one();\n  assert.equal(value, 1, '应返回 1');") },
 { name: "it 注册同样按用例核验且合规放行", code: [
@@ -24,7 +24,7 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：it 注册同样按用例核验',
-        "it('示例用例', () => {",
+        "it('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
@@ -34,7 +34,7 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：改名导入仍按绑定归因核验',
-        "verify('示例用例', () => {",
+        "verify('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
@@ -45,14 +45,14 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：认可的测试选项不缩减执行',
-        "test('示例用例', { concurrency: 2, timeout: 1000 }, () => {",
+        "test('示例用例', { concurrency: 2, timeout: 1000 }, function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
       ].join('\n') + '\n' },
 { name: "skip:false 非恒真选项放行", code: f_case('显式关闭 skip 的选项', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', { skip: false }, () => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', { skip: false }, function test_示例用例() {",
       ) },
 { name: "catch 内有恢复语句放行", code: f_case('catch 内有恢复语句', "  try {\n    run();\n  } catch (error) {\n    throw error;\n  }\n  assert.equal(one(), 1, '应返回 1');") },
 { name: "Promise.catch 有实际处理放行", code: 'loadConfig().catch((error) => {\n  throw error;\n});\n' },
@@ -63,9 +63,9 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：子测试经 await 等待',
-        "test('示例用例', async (t) => {",
+        "test('示例用例', async function test_示例用例(t) {",
         '  // 输入：await 等待子测试',
-        "  await t.test('子用例', () => {",
+        "  await t.test('子用例', function test_子用例() {",
         "    assert.equal(one(), 1, '应返回 1');",
         '  });',
         '});',
@@ -78,15 +78,15 @@ valid: [
 { name: "单组无编号预期兼容放行", code: f_case('单组预期', "  // 预期：应返回 1\n  assert.equal(one(), 1, '应返回 1');") },
 { name: "子编号归并同组放行", code: f_case('子编号分组', "  // 预期 1：基础返回\n  assert.equal(one(), 1, '应返回 1');\n  // 预期 1a：同组细分形态\n  assert.equal(one('raw'), '1', '原始形态');\n  // 预期 2：增值返回\n  assert.equal(one(), 2, '应返回 2');") },
 { name: "allowedTestOptions 白名单覆盖后未知键放行", code: f_case('自定义选项白名单', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', { retry: 2 }, () => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', { retry: 2 }, function test_示例用例() {",
       ), options: [{allowedTestOptions: ['retry']}] },
 { name: "requireItemNumber 开启且场景含有效单号放行", code: [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：REQ-20260101-001 验证单一行为',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
@@ -96,21 +96,21 @@ valid: [
         "import { expect } from '@playwright/test';",
         '',
         '// 场景：playwright expect 断言',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         '  const value = one();',
         '  expect(value, `应返回 2`).toBe(2);',
         '});',
       ].join('\n') + '\n' },
 { name: "pageInteraction 关闭时交互语句放行", code: "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\nfetch('https://api.example.com/users');\nbutton.dispatchEvent('click');\n" },
-{ name: "evaluate 内只读 fetch 放行", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => fetch('/api/list'));\n", options: [{pageInteraction: {banDirectHttp: true, fetchWriteInEvaluate: true}}] },
-{ name: "dispatchEvent 非 click 字面量放行", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => {\n  panel.dispatchEvent(new Event('input'));\n});\n", options: [{pageInteraction: {syntheticClick: true}}] },
+{ name: "evaluate 内只读 fetch 放行", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => fetch('/api/list'));\n", options: [{banDirectHttp: true, fetchWriteInEvaluate: true}] },
+{ name: "dispatchEvent 非 click 字面量放行", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => {\n  panel.dispatchEvent(new Event('input'));\n});\n", options: [{syntheticClick: true}] },
 { name: "场景说明为占位内容按缺失报告（内容交由评审）", code: [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：待补充',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
@@ -120,22 +120,21 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：缺少输入说明的用例',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
       ].join('\n') + '\n' },
 { name: "预期编号跳号报告（内容交由评审）", code: f_case('预期编号跳号', "  // 预期 1：基础返回\n  assert.equal(one(), 1, '应返回 1');\n  // 预期 3：增值返回\n  assert.equal(one(), 3, '应返回 3');") },
 { name: "无编号预期与编号分组混用报告（内容交由评审）", code: f_case('混用无编号预期', "  // 预期 1：基础返回\n  assert.equal(one(), 1, '应返回 1');\n  // 预期：无编号补充说明\n  assert.equal(one('raw'), '1', '原始形态');") },
 { name: "预期分组内缺断言报告（内容交由评审）", code: f_case('预期分组缺断言', "  const first = one();\n  // 预期 1：基础返回\n  run();\n  // 预期 2：增值返回\n  assert.equal(one(), 2, '应返回 2');") },
-{ name: "预期说明为占位内容报告（内容交由评审）", code: f_case('预期占位内容', "  // 预期 1：待补充\n  assert.equal(one(), 1, '应返回 1');") }
-], invalid: [
-{ name: "try 体调用清理型 API 的容错空 catch 仍需明确处理", code: f_case('清理容错空 catch', "  try {\n    nativeFs.rmSync(target, { recursive: true });\n  } catch {\n    // 单次清理失败不阻塞\n  }\n  assert.equal(one(), 1, '应返回 1');"), errors: [{"messageId":"swallowCatch"}], output: null },
-{ name: "t.after 内清理容错空 catch 仍需明确处理", code: [
+{ name: "预期说明为占位内容报告（内容交由评审）", code: f_case('预期占位内容', "  // 预期 1：待补充\n  assert.equal(one(), 1, '应返回 1');") },
+{ name: "try 体调用清理型 API 的容错空 catch 仍需明确处理（移交统一吞错规则）", code: f_case('清理容错空 catch', "  try {\n    nativeFs.rmSync(target, { recursive: true });\n  } catch {\n    // 单次清理失败不阻塞\n  }\n  assert.equal(one(), 1, '应返回 1');") },
+{ name: "t.after 内清理容错空 catch 仍需明确处理（移交统一吞错规则）", code: [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：t.after 清理容错空 catch',
-        "test('示例用例', (t) => {",
+        "test('示例用例', function test_示例用例(t) {",
         '  // 输入：注册 after 清理',
         '  t.after(() => {',
         '    try {',
@@ -146,13 +145,13 @@ valid: [
         '  });',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
-      ].join('\n') + '\n', errors: [{"messageId":"swallowCatch"}], output: null },
-{ name: "exit 处理器中的清理容错空 catch 仍需明确处理", code: [
+      ].join('\n') + '\n' },
+{ name: "exit 处理器中的清理容错空 catch 仍需明确处理（移交统一吞错规则）", code: [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：exit 清理容错空 catch',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：注册进程退出清理',
         "  process.on('exit', () => {",
         '    try {',
@@ -163,13 +162,20 @@ valid: [
         '  });',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
-      ].join('\n') + '\n', errors: [{"messageId":"swallowCatch"}], output: null },
+      ].join('\n') + '\n' },
+{ name: "空 catch 吞错（带参与无参各报告一处）（移交统一吞错规则）", code: 'try {\n  run();\n} catch (error) {}\ntry {\n  other();\n} catch {}\n' },
+{ name: "仅注释的 catch 仍报告吞错（移交统一吞错规则）", code: 'try {\n  run();\n} catch (error) {\n  // 暂时忽略\n}\n' },
+{ name: "Promise.catch 空回调吞错（移交统一吞错规则）", code: 'Promise.resolve().catch(() => {});\n' }
+], invalid: [
+
+
+
 { name: "普通断言 helper 不能代替用例内断言", code: f_case('认可断言 helper', '  expectResult(one());'), errors: [{"messageId":"missingAssertion"}], output: null },
-{ name: "缺说明与 only 不再有文件例外", code: "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\n\ntest.only('只跑这条', () => {\n  assert.equal(one(), 1, '应返回 1');\n});\n", errors: [{"messageId":"reducedExecution"},{"messageId":"missingScenario"}], output: null },
-{ name: "页面交互不再有文件例外", code: "import { chromium } from 'playwright'; const page = await (await chromium.launch()).newPage();\n" + "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\n", options: [{pageInteraction: {routeStub: true}}], errors: [{"messageId":"routeStub"}], output: null },
+{ name: "缺说明与 only 不再有文件例外", code: "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\n\ntest.only('只跑这条', function test_只跑这条() {\n  assert.equal(one(), 1, '应返回 1');\n});\n", errors: [{"messageId":"reducedExecution"},{"messageId":"missingScenario"}], output: null },
+{ name: "页面交互不再有文件例外", code: "import { chromium } from 'playwright'; const page = await (await chromium.launch()).newPage();\n" + "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\n", options: [{routeStub: true}], errors: [{"messageId":"routeStub"}], output: null },
 { name: "test.only 成员形态缩减执行", code: f_case('only 成员缩减执行', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test.only('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
+        "test.only('示例用例', function test_示例用例() {",
       ), errors: [{"messageId":"reducedExecution"}], output: null },
 { name: "describe.skip 套件缩减执行", code: [
         "import { describe } from 'node:test';",
@@ -181,23 +187,23 @@ valid: [
       ].join('\n') + '\n', errors: [{"messageId":"reducedExecution"}], output: null },
 { name: "test.todo 注册缩减执行", code: "import { test } from 'node:test';\n\n// 场景：todo 注册缩减执行\ntest.todo('示例用例');\n", errors: [{"messageId":"reducedExecution"}], output: null },
 { name: "改名 runner 的 only 注册仍按绑定命中", code: f_case('改名的 only 注册仍按绑定命中', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "verify.only('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
+        "verify.only('示例用例', function test_示例用例() {",
       ).replace(
         "import { test } from 'node:test';",
         "import { test as verify } from 'node:test';",
       ), errors: [{"messageId":"reducedExecution"}], output: null },
 { name: "skip 选项恒真缩减执行", code: f_case('skip 选项恒真缩减执行', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', { skip: true }, () => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', { skip: true }, function test_示例用例() {",
       ), errors: [{"messageId":"reducedExecution"}], output: null },
 { name: "未知测试选项按允许清单报告", code: f_case('未知测试选项', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', { retry: 2 }, () => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', { retry: 2 }, function test_示例用例() {",
       ), errors: [{"messageId":"unknownTestOption"}], output: null },
 { name: "spread 选项对象无法静态核验", code: f_case('spread 选项对象', "  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', { ...preset }, () => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', { ...preset }, function test_示例用例() {",
       ), errors: [{"messageId":"unresolvableTestOptions"}], output: null },
 { name: "用例缺可诊断断言", code: f_case('无断言的用例', '  run();'), errors: [{"messageId":"missingAssertion"}], output: null },
 { name: "恒真 equal 断言报告", code: "import assert from 'node:assert/strict';\nassert.equal(1, 1, '恒真');\n", errors: [{"messageId":"constantAssertion"}], output: null },
@@ -213,20 +219,20 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：子测试未等待',
-        "test('示例用例', (t) => {",
+        "test('示例用例', function test_示例用例(t) {",
         '  // 输入：注册未等待子测试',
-        "  t.test('子用例', () => {",
+        "  t.test('子用例', function test_子用例() {",
         "    assert.equal(one(), 1, '应返回 1');",
         '  });',
         '});',
       ].join('\n') + '\n', errors: [{"messageId":"missingAssertion"},{"messageId":"unawaitedSubtest"}], output: null },
 { name: "TestContext t.skip 缩减执行", code: f_case('TestContext 缩减执行', "  assert.equal(one(), 1, '应返回 1');\n  t.skip();").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', (t) => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', function test_示例用例(t) {",
       ), errors: [{"messageId":"testContextSkip"}], output: null },
 { name: "done 回调与 async 完成机制混用", code: f_case('回调与 Promise 混用', "  done();\n  assert.equal(one(), 1, '应返回 1');").replace(
-        "test('示例用例', () => {",
-        "test('示例用例', async (t, done) => {",
+        "test('示例用例', function test_示例用例() {",
+        "test('示例用例', async function test_示例用例(t, done) {",
       ), errors: [{"messageId":"callbackAndPromise"}], output: null },
 { name: "钩子 done 回调与 async 混用", code: [
         "import { beforeEach } from 'node:test';",
@@ -237,9 +243,9 @@ valid: [
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
       ].join('\n') + '\n', errors: [{"messageId":"callbackAndPromise"}], output: null },
-{ name: "空 catch 吞错（带参与无参各报告一处）", code: 'try {\n  run();\n} catch (error) {}\ntry {\n  other();\n} catch {}\n', errors: [{"messageId":"swallowCatch"},{"messageId":"swallowCatch"}], output: null },
-{ name: "仅注释的 catch 仍报告吞错", code: 'try {\n  run();\n} catch (error) {\n  // 暂时忽略\n}\n', errors: [{"messageId":"swallowCatch"}], output: null },
-{ name: "Promise.catch 空回调吞错", code: 'Promise.resolve().catch(() => {});\n', errors: [{"messageId":"swallowPromiseCatch"}], output: null },
+
+
+
 { name: "setTimeout 直呼 resolve 固定睡眠", code: 'const waited = await new Promise((resolve) => setTimeout(resolve, 100));\n', errors: [{"messageId":"fixedSleep"}], output: null },
 { name: "setTimeout 回调内 resolve 同判固定睡眠", code: 'const waited = await new Promise((resolve) => setTimeout(() => resolve(1), 50));\n', errors: [{"messageId":"fixedSleep"}], output: null },
 { name: "故障注入移除函数被丢弃报告", code: "import mgr from 'litenvi-node/lite-cmd-mgr.mjs';\n" + 'mgr.command(`git`).t_inject({ exit: 1 });\n', errors: [{"messageId":"unregisteredInject"}], output: null },
@@ -248,7 +254,7 @@ valid: [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
         '',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
@@ -258,19 +264,19 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：验证单一行为',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：构造调用',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
       ].join('\n') + '\n', options: [{requireItemNumber: true}], errors: [{"messageId":"missingItemNumber"}], output: null },
-{ name: "route 桩伪造响应报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\n", options: [{pageInteraction: {routeStub: true}}], errors: [{"messageId":"routeStub"}], output: null },
-{ name: "evaluate 回调内写方法 fetch 报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => {\n  fetch('/api/save', { method: 'POST', body: payload });\n});\n", options: [{pageInteraction: {fetchWriteInEvaluate: true}}], errors: [{"messageId":"fetchWrite"}], output: null },
-{ name: "evaluate 字符串脚本内写 fetch 按已知形态报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(\"fetch('/api/save', { method: 'POST' })\");\n", options: [{pageInteraction: {fetchWriteInEvaluate: true}}], errors: [{"messageId":"fetchWrite"}], output: null },
-{ name: "Node 侧裸 fetch 直发请求报告", code: "fetch('https://api.example.com/users');\n", options: [{pageInteraction: {banDirectHttp: true}}], errors: [{"messageId":"directHttp"}], output: null },
-{ name: "Node 侧 XMLHttpRequest 实例化报告", code: 'new XMLHttpRequest();\n', options: [{pageInteraction: {banDirectHttp: true}}], errors: [{"messageId":"directHttp"}], output: null },
-{ name: "dispatchEvent click 字面量合成事件报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "button.dispatchEvent('click');\n", options: [{pageInteraction: {syntheticClick: true}}], errors: [{"messageId":"syntheticClick"}], output: null },
-{ name: "evaluate 内 MouseEvent click 合成事件报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => {\n  panel.dispatchEvent(new MouseEvent('click'));\n});\n", options: [{pageInteraction: {syntheticClick: true}}], errors: [{"messageId":"syntheticClick"}], output: null },
-{ name: "文件级例外不豁免③（route 桩仍报告）（删除旧参数）", code: "// 另一种文件入口\n" + "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\n", options: [{pageInteraction: {routeStub: true}}], errors: [{"messageId":"routeStub"}], output: null },
+{ name: "route 桩伪造响应报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\n", options: [{routeStub: true}], errors: [{"messageId":"routeStub"}], output: null },
+{ name: "evaluate 回调内写方法 fetch 报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => {\n  fetch('/api/save', { method: 'POST', body: payload });\n});\n", options: [{fetchWriteInEvaluate: true}], errors: [{"messageId":"fetchWrite"}], output: null },
+{ name: "evaluate 字符串脚本内写 fetch 按已知形态报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(\"fetch('/api/save', { method: 'POST' })\");\n", options: [{fetchWriteInEvaluate: true}], errors: [{"messageId":"fetchWrite"}], output: null },
+{ name: "Node 侧裸 fetch 直发请求报告", code: "fetch('https://api.example.com/users');\n", options: [{banDirectHttp: true}], errors: [{"messageId":"directHttp"}], output: null },
+{ name: "Node 侧 XMLHttpRequest 实例化报告", code: 'new XMLHttpRequest();\n', options: [{banDirectHttp: true}], errors: [{"messageId":"directHttp"}], output: null },
+{ name: "dispatchEvent click 字面量合成事件报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "button.dispatchEvent('click');\n", options: [{syntheticClick: true}], errors: [{"messageId":"syntheticClick"}], output: null },
+{ name: "evaluate 内 MouseEvent click 合成事件报告", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "await page.evaluate(() => {\n  panel.dispatchEvent(new MouseEvent('click'));\n});\n", options: [{syntheticClick: true}], errors: [{"messageId":"syntheticClick"}], output: null },
+{ name: "文件级例外不豁免③（route 桩仍报告）（删除旧参数）", code: "// 另一种文件入口\n" + "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + "page.route('**/api/users', (route) => route.fulfill({ json: {} }));\n", options: [{routeStub: true}], errors: [{"messageId":"routeStub"}], output: null },
 { name: "窄例外不掩盖同文件质量违规（删除旧参数）", code: "import { chromium } from 'playwright'; const browser = await chromium.launch(); const page = await browser.newPage(); const button = page.locator('#submit');\n" + [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
@@ -278,23 +284,23 @@ valid: [
         "page.route('**/api/users', (route) => route.fulfill({ json: {} }));",
         '',
         '// 场景：窄例外不豁免质量模式',
-        "test.only('示例用例', () => {",
+        "test.only('示例用例', function test_示例用例() {",
         '  // 输入：构造缩减执行',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
-      ].join('\n') + '\n', options: [{pageInteraction: {routeStub: true}}], errors: [{"messageId":"routeStub"},{"messageId":"reducedExecution"}], output: null },
+      ].join('\n') + '\n', options: [{routeStub: true}], errors: [{"messageId":"routeStub"},{"messageId":"reducedExecution"}], output: null },
 { name: "同一文件多个用例分别报告", code: [
         "import { test } from 'node:test';",
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：缩减执行的第一条用例',
-        "test.only('第一条', () => {",
+        "test.only('第一条', function test_第一条() {",
         '  // 输入：构造缩减执行',
         "  assert.equal(one(), 1, '应返回 1');",
         '});',
         '',
         '// 场景：缺断言的第二条用例',
-        "test('第二条', () => {",
+        "test('第二条', function test_第二条() {",
         '  // 输入：仅有副作用',
         '  run();',
         '});',
@@ -304,10 +310,23 @@ valid: [
         "import assert from 'node:assert/strict';",
         '',
         '// 场景：单条用例多重违规',
-        "test('示例用例', () => {",
+        "test('示例用例', function test_示例用例() {",
         '  // 输入：缺消息与恒真并存',
         '  assert.equal(one(), 1);',
         "  assert.ok(true, '恒真');",
         '});',
       ].join('\n') + '\n', errors: [{"messageId":"missingAssertMessage"},{"messageId":"constantAssertion"}], output: null }
-] });
+] };
+for (const [kind, scenarios] of Object.entries(f_CASES)) {
+  for (const scenario of scenarios) {
+    /** 场景：全部质量类别同时启用，原诊断和所属规则均须完整匹配。 */
+    test(`${kind}：${scenario.name}`, function testQualityCategoryScenario() {
+      const actual = new Linter().verify(scenario.code, [{
+        plugins: { atb: plugin }, rules: i_qualitySettings(scenario.options?.[0]),
+      }]);
+      const expected = (scenario.errors || []).map(item => [i_MESSAGE_RULES[item.messageId], item.messageId]).sort();
+      assert.deepEqual(actual.map(item => [item.ruleId, item.messageId]).sort(), expected, `${scenario.name}：应保留全部原诊断且归入正确类别`);
+      if (scenario.output === null) assert.ok(actual.every(item => !item.fix), '拆分不能引入未经授权的自动修复');
+    });
+  }
+}

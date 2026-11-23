@@ -36,8 +36,8 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     { name: '入口面 t_ 导出放行', filename: faceFile, code: 'export function t_tool() {}\n', options },
     // 场景：入口面核验——非入口面文件的 i_ 导出放行（i_ 即包内协作，本就只在内部消费）。
     { name: '非入口面 i_ 导出放行', filename: prodFile, code: 'export const i_data = 1;\n', options },
-    // 场景：入口面核验——default 无名字面不参与；f_ 导出移交 no-out-of-level-access 不双报。
-    { name: 'default 导出不参与入口面核验', filename: prodFile, code: 'export default function run() {}\n', options },
+    // 场景：入口面核验——default 同样须在已登记入口；f_ 导出移交访问规则不双报。
+    { name: '入口面 default 导出放行', filename: faceFile, code: 'export default function run() {}\n', options },
     { name: 'f_ 导出移交不参与入口面核验', filename: prodFile, code: 'export function f_run() {}\n', options },
     // 场景：生产文件非导出方法按 f_ 分级放行（函数声明与函数值绑定两形态）。
     { name: '生产文件非导出函数 f_ 前缀放行', filename: prodFile, code: 'function f_run() {}\nconst f_helper = () => {};\n', options },
@@ -54,9 +54,6 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     { name: '测试文件别名导出 i_ 面名放行', filename: testFile, code: 'function i_run() {}\nexport { i_run as i_case };\n', options },
     // 场景：re-export（export-from）同样按面名核验，t_ 面名放行。
     { name: '测试文件 re-export i_ 面名放行', filename: testFile, code: "export { i_thing } from '../dep.mjs';\n", options },
-    // 场景：默认导出无名字面，不参与 t_ 要求（消费方自带名，前缀体系不适用）。
-    { name: '测试文件默认导出不参与', filename: testFile, code: 'export default function run() {}\n', options },
-    { name: '测试文件默认导出对象不参与', filename: testFile, code: 'export default {};\n', options },
     // 场景：测试目录同样受 f_ 分级——非导出函数带 f_ 前缀放行。
     { name: '测试文件非导出函数 f_ 前缀放行', filename: testFile, code: 'function f_run() {}\n', options },
     // 场景：相对 testDir 按运行目录解析——相对文件名与相对 testDir 同基准，目录内即测试身份。
@@ -84,7 +81,7 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     // 场景：公开工厂返回公开成员与 f_ 内部细节成员，放行。
     {
       name: '公开工厂返回公开与 f_ 键放行',
-      filename: prodFile,
+      filename: faceFile,
       code: 'export default { command() { return { query() {}, f_cache: 1 }; } };\n',
       options,
     },
@@ -168,6 +165,11 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     { name: '测试文件命名工厂 i_ 契约键放行', filename: testFile, code: 'function f_makeCmd() { return { i_runSync() {} }; }\n', options },
   ],
   invalid: [
+    // 场景：测试默认导出不能绕过 i_/t_ 的导出级别要求。
+    { name: '测试文件默认函数导出报告', filename: testFile, code: 'export default function run() {}\n', options, output: null,
+      errors: [{ messageId: 'testExportLevel', data: { name: 'default' }, type: 'ExportDefaultDeclaration' }] },
+    { name: '测试文件默认对象导出报告', filename: testFile, code: 'export default {};\n', options, output: null,
+      errors: [{ messageId: 'testExportLevel', data: { name: 'default' }, type: 'ExportDefaultDeclaration' }] },
     // 场景：测试文件无前缀导出即公开接口，函数与数据两形态各报面名。
     {
       name: '测试文件无前缀函数导出报告',
@@ -271,7 +273,7 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
     // 场景：越狱形态——公开工厂把 t_ 方法藏进返回对象，声明侧即报（访问侧看不见返回值）。
     {
       name: '公开工厂返回 t_ 方法报告',
-      filename: prodFile,
+      filename: faceFile,
       code: 'export default { command() { return { t_reset() {} }; } };\n',
       options,
       output: null,
@@ -455,7 +457,7 @@ tester.run('no-wrong-access-level', wrongAccessLevel, {
 });
 
 // 前提约束（fail-loud）：testDir 不支持绝对路径——传入即抛，防运行目录漂移静默失效。
-it('no-wrong-access-level 绝对路径 testDir 抛错', () => {
+it('no-wrong-access-level 绝对路径 testDir 抛错', function test_no_wrong_access_level_绝对路径_testDir_抛错() {
   assert.throws(
     () => wrongAccessLevel.create({
       options: [{ testDir: '/absolute/tests' }],

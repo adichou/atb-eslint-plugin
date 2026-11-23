@@ -13,7 +13,7 @@
 // node: 内置模块不参与该判定。
 // 根配置 eslint.config.mjs 内置识别为开发代码（固定路径不经参数）：配置基建合法引用
 // devDependencies；识别不是豁免——未声明依赖照抓。本规则不设 ignores，不支持任何形态的忽略。
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
+import fs from 'litenvi-node/lite-fs.mjs';
 import path from 'node:path';
 import { i_evaluateStaticString, i_minimatch, i_packageNameOf, i_projectRootOf } from '../lib/attributions.mjs';
 

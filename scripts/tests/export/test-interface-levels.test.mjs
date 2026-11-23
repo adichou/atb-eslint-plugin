@@ -14,16 +14,16 @@ import { i_createFixture } from '../lint-fixture.mjs';
 const f_CASES = [
   ['测试侧 i_ 具名导入', 'scripts/tests/a.test.mjs', "import { i_build } from './helper.mjs'; i_build();", []],
   ['生产侧 i_ 具名导入', 'src/app.mjs', "import { i_work } from './work.mjs'; i_work();", []],
-  ['生产访问测试侧 i_', 'src/app.mjs', "import { i_build } from '../scripts/tests/helper.mjs';", ['productionTestInternalAccess']],
+  ['生产访问测试侧 i_', 'src/app.mjs', "import { i_build } from '../scripts/tests/helper.mjs';", ['productionDependsOnTests']],
   ['测试访问生产侧 i_', 'scripts/tests/a.test.mjs', "import { i_work } from '../../src/work.mjs';", ['testInternalAccess']],
   ['测试模块别名成员', 'scripts/tests/a.test.mjs', "import helper from './helper.mjs'; const h = helper; const { i_build: build } = h; build();", []],
-  ['生产模块别名不能绕过', 'src/app.mjs', "import helper from '../scripts/tests/helper.mjs'; helper['i_build']();", ['productionTestInternalAccess']],
+  ['生产模块别名不能绕过', 'src/app.mjs', "import helper from '../scripts/tests/helper.mjs'; helper['i_build']();", ['productionDependsOnTests']],
   ['测试侧再导出内部接口', 'scripts/tests/helpers.mjs', "export { i_build } from './helper.mjs';", []],
-  ['生产侧再导出测试内部接口', 'src/app.mjs', "export { i_build } from '../scripts/tests/helper.mjs';", ['productionTestInternalAccess']],
+  ['生产侧再导出测试内部接口', 'src/app.mjs', "export { i_build } from '../scripts/tests/helper.mjs';", ['productionDependsOnTests']],
   ['包自引用测试内部模块', 'scripts/tests/a.test.mjs', "import { i_build } from 'fixture/internal';", []],
   ['跨包 i_ 禁止', 'scripts/tests/a.test.mjs', "import { i_build } from 'other';", ['externalInternalAccess']],
-  ['嵌套包的 i_ 也不能由生产访问', 'src/app.mjs', "import { i_work } from '../nested/work.mjs';", ['externalInternalAccess']],
-  ['嵌套包的 i_ 也不能由测试访问', 'scripts/tests/a.test.mjs', "import { i_work } from '../../nested/work.mjs';", ['externalInternalAccess']],
+  ['嵌套包的 i_ 也不能由生产访问', 'src/app.mjs', "import { i_work } from '../nested/work.mjs';", ['crossPackagePath']],
+  ['嵌套包的 i_ 也不能由测试访问', 'scripts/tests/a.test.mjs', "import { i_work } from '../../nested/work.mjs';", ['crossPackagePath']],
   ['跨包默认成员 i_ 禁止', 'scripts/tests/a.test.mjs', "import other from 'other'; other.i_build();", ['externalInternalAccess']],
   ['对外 t_ 测试可调用', 'scripts/tests/a.test.mjs', "import { t_build } from 'other'; t_build();", []],
   ['对外 t_ 生产不可调用', 'src/app.mjs', "import { t_build } from 'other';", ['testOnlyAccess']],
@@ -31,7 +31,7 @@ const f_CASES = [
 ];
 for (const [name, relative, code, expected] of f_CASES) {
   /** 场景：i_ 仅在同包同侧协作，命名别名和模块成员不改变原始来源。 */
-  test(name, () => {
+  test(name, function test_test_interface_levels_name() {
     const root = i_createFixture({ 'package.json': JSON.stringify({ name: 'fixture', exports: { './internal': './scripts/tests/helper.mjs' } }), 'scripts/tests/helper.mjs': '', 'src/work.mjs': '', 'nested/package.json': '{"name":"nested"}', 'nested/work.mjs': '' });
     try {
       const config = [{ files: ['**/*.mjs'], plugins: { atb: { rules: { access } } }, rules: { 'atb/access': ['error', { testDir: 'scripts/tests' }] } }];
@@ -52,7 +52,7 @@ const f_EXPORTS = [
 ];
 for (const [name, relative, code, expected] of f_EXPORTS) {
   /** 场景：测试内部接口无需对外登记；对外 t_ 必须匹配真实的包导入入口。 */
-  test(name, () => {
+  test(name, function test_test_interface_levels_name_2() {
     const root = i_createFixture({ 'package.json': JSON.stringify({ name: 'fixture', exports: { './test': './scripts/tests/public.mjs' } }) });
     try {
       const actual = new Linter({ cwd: root }).verify(code, [{ files: ['**/*.mjs'], plugins: { atb: { rules: { levels } } }, rules: { 'atb/levels': ['error', { testDir: 'scripts/tests' }] } }], { filename: path.join(root, relative) });
@@ -62,7 +62,7 @@ for (const [name, relative, code, expected] of f_EXPORTS) {
 }
 
 /** 场景：显式发布的测试辅助模块可供包外测试使用，内部 i_ 仍须有本包消费者。 */
-test('测试对外入口、清单守护和死导出分类保持一致', () => {
+test('测试对外入口、清单守护和死导出分类保持一致', function test_测试对外入口_清单守护和死导出分类保持一致() {
   const root = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', exports: './scripts/tests/public.mjs' }),
     'scripts/tests/public.mjs': 'export function t_build() {} export function i_unused() {}',

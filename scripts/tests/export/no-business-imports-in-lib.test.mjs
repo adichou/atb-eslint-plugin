@@ -68,13 +68,13 @@ const f_CASES = [
 
 for (const [name, code, expected, relative = 'src/lib/entry.mjs'] of f_CASES) {
   /** 场景：按真实加载 API、清单与实际路径判定内部库边界。 */
-  test(name, () => {
+  test(name, function test_no_business_imports_in_lib_name() {
     const root = i_createFixture({
       'package.json': JSON.stringify({ name: 'fixture', exports: { './lib/*': './src/lib/*.mjs', './business': './src/business.mjs' }, imports: { '#peer': './src/lib/peer.mjs', '#business': './src/business.mjs' }, dependencies: { dep: '1.0.0' }, optionalDependencies: { optional: '1.0.0' }, peerDependencies: { peer: '1.0.0' }, devDependencies: { 'dev-only': '1.0.0' } }),
       'src/lib/peer.mjs': 'export const value = 1;', 'src/business.mjs': 'export const value = 1;', 'lib-extra/peer.mjs': '',
     });
     try {
-      const config = [{ files: ['**/*.mjs'], plugins: { atb: plugin }, rules: { 'atb/no-reverse-imports-in-lib': ['error', { libDir: 'src/lib' }] } }];
+      const config = [{ files: ['**/*.mjs'], plugins: { atb: plugin }, rules: { 'atb/no-business-imports-in-lib': ['error', { libDir: 'src/lib' }] } }];
       const actual = new Linter({ cwd: root }).verify(code, config, { filename: path.join(root, relative) });
       assert.deepEqual(actual.map(message => message.messageId), expected, `${name}：诊断应符合加载目标的实际身份`);
     } finally { fs.t_unmock(); }
@@ -82,12 +82,12 @@ for (const [name, code, expected, relative = 'src/lib/entry.mjs'] of f_CASES) {
 }
 
 /** 场景：软链接及绝对文件 URL 不能使库外目标冒认库内文件，库内真实目标仍可访问。 */
-test('软链接与绝对路径按真实位置检查', () => {
+test('软链接与绝对路径按真实位置检查', function test_软链接与绝对路径按真实位置检查() {
   const root = i_createFixture({ 'package.json': '{"name":"fixture"}', 'src/lib/peer.mjs': '', 'src/business.mjs': '' });
   try {
     fs.symlinkSync(`${root}/src/business.mjs`, `${root}/src/lib/escape.mjs`);
     fs.symlinkSync(`${root}/src/lib/peer.mjs`, `${root}/src/inside.mjs`);
-    const config = [{ files: ['**/*.mjs'], plugins: { atb: plugin }, rules: { 'atb/no-reverse-imports-in-lib': ['error', { libDir: 'src/lib' }] } }];
+    const config = [{ files: ['**/*.mjs'], plugins: { atb: plugin }, rules: { 'atb/no-business-imports-in-lib': ['error', { libDir: 'src/lib' }] } }];
     const code = `import './escape.mjs'; import '../inside.mjs'; import(${JSON.stringify(pathToFileURL(`${root}/src/business.mjs`).href)}); import(${JSON.stringify(`${root}/src/lib/peer.mjs`)});`;
     const actual = new Linter({ cwd: root }).verify(code, config, { filename: `${root}/src/lib/entry.mjs` });
     assert.deepEqual(actual.map(message => message.messageId), ['outsideLib', 'outsideLib'], '软链逃逸和库外 URL 应报告，解析回库内的软链及绝对路径应允许');
@@ -95,13 +95,13 @@ test('软链接与绝对路径按真实位置检查', () => {
 });
 
 /** 场景：包条件导出按加载方式判断，不能用 import 的库内分支替 require 的库外分支放行。 */
-test('条件导出与封闭入口按实际加载方式检查', () => {
+test('条件导出与封闭入口按实际加载方式检查', function test_条件导出与封闭入口按实际加载方式检查() {
   const root = i_createFixture({
     'package.json': JSON.stringify({ name: 'fixture', exports: { './conditional': { node: { import: './src/lib/peer.mjs', require: './src/business.cjs' } }, './blocked': null }, imports: { '#conditional': { import: './src/lib/peer.mjs', require: './src/business.cjs' } } }),
     'src/lib/peer.mjs': '', 'src/business.cjs': '',
   });
   try {
-    const config = [{ files: ['**/*.mjs', '**/*.cjs'], plugins: { atb: plugin }, rules: { 'atb/no-reverse-imports-in-lib': ['error', { libDir: 'src/lib' }] } }];
+    const config = [{ files: ['**/*.mjs', '**/*.cjs'], plugins: { atb: plugin }, rules: { 'atb/no-business-imports-in-lib': ['error', { libDir: 'src/lib' }] } }];
     const linter = new Linter({ cwd: root });
     const actual = linter.verify("import('fixture/conditional'); require('fixture/conditional'); import('fixture/blocked'); import('#conditional'); require('#conditional');", config, { filename: `${root}/src/lib/entry.mjs` });
     assert.deepEqual(actual.map(message => message.messageId), ['outsideLib', 'unresolvedTarget', 'outsideLib'], 'import 与 require 条件必须分别解析，null 入口不能放行');
@@ -111,11 +111,11 @@ test('条件导出与封闭入口按实际加载方式检查', () => {
 });
 
 /** 场景：内部库目录必须位于当前项目，错误目录配置不能静默使规则失效。 */
-test('拒绝绝对目录和项目外目录配置', () => {
+test('拒绝绝对目录和项目外目录配置', function test_拒绝绝对目录和项目外目录配置() {
   const root = i_createFixture({ 'package.json': '{"name":"fixture"}' });
   try {
     for (const libDir of ['/outside', '../outside']) {
-      const config = [{ files: ['**/*.mjs'], plugins: { atb: plugin }, rules: { 'atb/no-reverse-imports-in-lib': ['error', { libDir }] } }];
+      const config = [{ files: ['**/*.mjs'], plugins: { atb: plugin }, rules: { 'atb/no-business-imports-in-lib': ['error', { libDir }] } }];
       assert.throws(() => new Linter({ cwd: root }).verify('', config, { filename: `${root}/src/lib/entry.mjs` }), /libDir.*相对目录/, '错误目录配置必须明确失败');
     }
   } finally { fs.t_unmock(); }

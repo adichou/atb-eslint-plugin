@@ -12,7 +12,7 @@ import plugin from 'atb-eslint-plugin/plugin.mjs';
 const REAL_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** 场景：清单关键字段在位——包名是生态引用锚点，规则通配导出面是单规则导入通道。 */
-test('valid：清单关键字段在位', () => {
+test('valid：清单关键字段在位', function test_valid_清单关键字段在位() {
   fs.t_mock({ exclude: [REAL_ROOT] });
   try {
     const manifest = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
@@ -23,7 +23,7 @@ test('valid：清单关键字段在位', () => {
 });
 
 /** 场景：exports 面真实可加载——自引用导入插件入口，守护规则注册面完整。 */
-test('valid：exports 面加载与规则注册', () => {
+test('valid：exports 面加载与规则注册', function test_valid_exports_面加载与规则注册() {
   assert.ok(plugin.rules['no-blacklist-module-imports'] !== undefined, '环境模块黑名单规则在注册面');
   assert.ok(plugin.rules['no-missing-config-tests'] !== undefined, '本守护规则自身在注册面');
 });

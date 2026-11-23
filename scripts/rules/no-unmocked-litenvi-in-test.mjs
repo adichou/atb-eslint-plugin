@@ -11,7 +11,7 @@
 // 不追动态 import 与运行时传值、helper 内部自身的门面使用不在本规则判定（只看用例回调的
 // 直接使用面）；清理是否真实生效由运行时与评审验证。诊断按门面模块 + 用例名 + 所需开关定位。
 import path from 'node:path';
-import fs from '../../../litenvi-node/scripts/lite-fs.mjs';
+import fs from 'litenvi-node/lite-fs.mjs';
 
 // 门面 → 所需开关（t_mock 或 t_install）；未列出的 lite 模块视为无开关、豁免
 const DEFAULT_SWITCHES = {

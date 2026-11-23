@@ -16,7 +16,7 @@ const f_CASES = [
 ];
 for (const [name, other, expected] of f_CASES) {
   /** 场景：依赖边来自真实导入 API，字符串或注释不能伪造成环。 */
-  test(name, () => {
+  test(name, function test_module_graph_name() {
     const root = i_createFixture({ 'package.json': JSON.stringify({ name: 'fixture', exports: { './a': './src/a.mjs' } }), 'src/b.mjs': other });
     try {
       const config = [{ files: ['**/*.mjs'], plugins: { atb: { rules: { cycles: rule } } }, rules: { 'atb/cycles': 'error' } }];

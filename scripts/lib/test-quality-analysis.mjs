@@ -99,7 +99,6 @@ export function i_testApiAnalysis(sourceCode, filename = '') {
     if (node.type === 'CallExpression') {
       const callee = symbol(node.callee, seen);
       if (callee && ['node:http', 'node:net', 'litenvi-node/lite-server.mjs'].includes(callee.source) && callee.name.endsWith('.createServer')) return { ...callee, name: 'server' };
-      if (callee?.source.startsWith('litenvi-node/lite-') && /\.t_requests$/.test(callee.name)) return { ...callee, readonly: true };
       if (callee?.source === 'litenvi-node/lite-cmd-mgr.mjs' && callee.name.endsWith('.command')) return { source: callee.source, name: 'command-handle' };
       if (callee?.source === '@playwright/test' && /(?:^|\.)expect\.configure$/.test(callee.name)) return { source: callee.source, name: 'expect' };
     }
@@ -162,7 +161,7 @@ export function i_testApiAnalysis(sourceCode, filename = '') {
     }
     return false;
   };
-  return { binding, symbol, runner, assertion, consumed };
+  return { binding, symbol, runner, assertion, consumed, moduleSource: f_source };
 }
 
 // 内部：认可本例直接断言，以及已调用本地 helper 明确执行的回调；不借用 helper 内隐藏的断言。
